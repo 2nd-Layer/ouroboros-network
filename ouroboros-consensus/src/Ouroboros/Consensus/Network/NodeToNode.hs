@@ -36,6 +36,7 @@ import           Codec.Serialise (Serialise)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
+import qualified Data.Map.Strict as M
 import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 
@@ -47,7 +48,9 @@ import           Ouroboros.Network.BlockFetch.Client (BlockFetchClient,
                      blockFetchClient)
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Codec
+import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Driver
+import           Ouroboros.Network.KeepAlive
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
@@ -59,6 +62,10 @@ import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Ouroboros.Network.Protocol.KeepAlive.Client
+import           Ouroboros.Network.Protocol.KeepAlive.Codec
+import           Ouroboros.Network.Protocol.KeepAlive.Server
+import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.TxSubmission.Client
 import           Ouroboros.Network.Protocol.TxSubmission.Codec
 import           Ouroboros.Network.Protocol.TxSubmission.Server
@@ -123,17 +130,31 @@ data Handlers m peer blk = Handlers {
         :: BlockNodeToNodeVersion blk
         -> peer
         -> TxSubmissionServerPipelined (GenTxId blk) (GenTx blk) m ()
+
+    , hKeepAliveClient
+        :: BlockNodeToNodeVersion blk
+        -> peer
+        -> (StrictTVar m (M.Map peer PeerGSV))
+        -> KeepAliveInterval
+        -> StrictTVar m (Maybe Time)
+        -> KeepAliveClient m ()
+    , hKeepAliveServer
+        :: BlockNodeToNodeVersion blk
+        -> peer
+        -> KeepAliveServer m ()
     }
 
 mkHandlers
   :: forall m blk remotePeer localPeer.
      ( IOLike m
+     , MonadTimer m
      , LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
      , Serialise (HeaderHash blk)
      , ReconstructNestedCtxt Header blk
      , TranslateNetworkProtocolVersion blk
+     , Ord remotePeer
      )
   => NodeArgs   m remotePeer localPeer blk
   -> NodeKernel m remotePeer localPeer blk
@@ -175,6 +196,8 @@ mkHandlers
             (getMempoolReader getMempool)
             (getMempoolWriter getMempool)
             (nodeToNodeProtocolVersion (Proxy :: Proxy blk) version)
+      , hKeepAliveClient = \_version -> keepAliveClient (Node.keepAliveClientTracer tracers)
+      , hKeepAliveServer = \_version _peer -> keepAliveServer
       }
 
 {-------------------------------------------------------------------------------
@@ -182,12 +205,13 @@ mkHandlers
 -------------------------------------------------------------------------------}
 
 -- | Node-to-node protocol codecs needed to run 'Handlers'.
-data Codecs blk e m bCS bSCS bBF bSBF bTX = Codecs {
+data Codecs blk e m bCS bSCS bBF bSBF bTX bKA = Codecs {
       cChainSyncCodec            :: Codec (ChainSync (Header blk) (Tip blk))           e m bCS
     , cChainSyncCodecSerialised  :: Codec (ChainSync (SerialisedHeader blk) (Tip blk)) e m bSCS
     , cBlockFetchCodec           :: Codec (BlockFetch blk)                             e m bBF
     , cBlockFetchCodecSerialised :: Codec (BlockFetch (Serialised blk))                e m bSBF
     , cTxSubmissionCodec         :: Codec (TxSubmission (GenTxId blk) (GenTx blk))     e m bTX
+    , cKeepAliveCodec            :: Codec KeepAlive                                    e m bKA
     }
 
 -- | Protocol codecs for the node-to-node protocols
@@ -195,7 +219,7 @@ defaultCodecs :: forall m blk. (IOLike m, SerialiseNodeToNodeConstraints blk)
               => CodecConfig       blk
               -> BlockNodeToNodeVersion blk
               -> Codecs blk DeserialiseFailure m
-                   ByteString ByteString ByteString ByteString ByteString
+                   ByteString ByteString ByteString ByteString ByteString ByteString
 defaultCodecs ccfg version = Codecs {
       cChainSyncCodec =
         codecChainSync
@@ -235,6 +259,9 @@ defaultCodecs ccfg version = Codecs {
           dec
           enc
           dec
+    , cKeepAliveCodec =
+        codecKeepAlive
+
     }
   where
     p :: Proxy blk
@@ -254,12 +281,14 @@ identityCodecs :: Monad m
                     (AnyMessage (BlockFetch blk))
                     (AnyMessage (BlockFetch (Serialised blk)))
                     (AnyMessage (TxSubmission (GenTxId blk) (GenTx blk)))
+                    (AnyMessage KeepAlive)
 identityCodecs = Codecs {
       cChainSyncCodec            = codecChainSyncId
     , cChainSyncCodecSerialised  = codecChainSyncId
     , cBlockFetchCodec           = codecBlockFetchId
     , cBlockFetchCodecSerialised = codecBlockFetchId
     , cTxSubmissionCodec         = codecTxSubmissionId
+    , cKeepAliveCodec            = codecKeepAliveId
     }
 
 {-------------------------------------------------------------------------------
@@ -326,7 +355,7 @@ showTracers tr = Tracers {
 -- | Applications for the node-to-node protocols
 --
 -- See 'Network.Mux.Types.MuxApplication'
-data Apps m peer blk bCS bBF bTX a = Apps {
+data Apps m peer blk bCS bBF bTX bKA a = Apps {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
       aChainSyncClient    :: BlockNodeToNodeVersion blk -> peer -> Channel m bCS -> m (a, Maybe bCS)
@@ -347,11 +376,17 @@ data Apps m peer blk bCS bBF bTX a = Apps {
 
       -- | Start a transaction submission server.
     , aTxSubmissionServer :: BlockNodeToNodeVersion blk -> peer -> Channel m bTX -> m (a, Maybe bTX)
+
+      -- | Start a keep-alive client.
+    , aKeepAliveClient :: BlockNodeToNodeVersion blk -> peer -> Channel m bKA -> m a
+
+      -- | Start a keep-alive server.
+    , aKeepAliveServer :: BlockNodeToNodeVersion blk -> peer -> Channel m bKA -> m a
     }
 
 -- | Construct the 'NetworkApplication' for the node-to-node protocols
 mkApps
-  :: forall m remotePeer localPeer blk e bCS bBF bTX.
+  :: forall m remotePeer localPeer blk e bCS bBF bTX bKA.
      ( IOLike m
      , MonadTimer m
      , Ord remotePeer
@@ -360,10 +395,10 @@ mkApps
      )
   => NodeKernel m remotePeer localPeer blk -- ^ Needed for bracketing only
   -> Tracers m remotePeer blk e
-  -> Codecs blk e m bCS bCS bBF bBF bTX
+  -> Codecs blk e m bCS bCS bBF bBF bTX bKA
   -> m ChainSyncTimeout
   -> Handlers m remotePeer blk
-  -> Apps m remotePeer blk bCS bBF bTX ()
+  -> Apps m remotePeer blk bCS bBF bTX bKA ()
 mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
     Apps {..}
   where
@@ -479,6 +514,40 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
         channel
         (txSubmissionServerPeerPipelined (hTxSubmissionServer version them))
 
+    aKeepAliveClient
+      :: BlockNodeToNodeVersion blk
+      -> remotePeer
+      -> Channel m bKA
+      -> m ()
+    aKeepAliveClient version them channel = do
+      labelThisThread "KeepAliveClient"
+      startTs <- newTVarM Nothing
+      bracketKeepAliveClient (getFetchClientRegistry kernel) them $ \dqCtx -> do
+        runPeerWithLimits
+          nullTracer
+          cKeepAliveCodec
+          (byteLimitsKeepAlive (const 0)) -- TODO: Real Bytelimits, see #1727
+          timeLimitsKeepAlive
+          channel
+          $ keepAliveClientPeer
+          $ hKeepAliveClient version them dqCtx (KeepAliveInterval 10) startTs
+
+    aKeepAliveServer
+      :: BlockNodeToNodeVersion blk
+      -> remotePeer
+      -> Channel m bKA
+      -> m ()
+    aKeepAliveServer _version _them channel = do
+      labelThisThread "KeepAliveServer"
+      runPeerWithLimits
+        nullTracer
+        cKeepAliveCodec
+        (byteLimitsKeepAlive (const 0)) -- TODO: Real Bytelimits, see #1727
+        timeLimitsKeepAlive
+        channel
+        $ keepAliveServerPeer
+        $ keepAliveServer
+
 {-------------------------------------------------------------------------------
   Projections from 'Apps'
 -------------------------------------------------------------------------------}
@@ -492,7 +561,7 @@ mkApps kernel Tracers {..} Codecs {..} genChainSyncTimeout Handlers {..} =
 initiator
   :: MiniProtocolParameters
   -> BlockNodeToNodeVersion blk
-  -> Apps m (ConnectionId peer) blk b b b a
+  -> Apps m (ConnectionId peer) blk b b b b a
   -> OuroborosApplication 'InitiatorMode peer b m a Void
 initiator miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
@@ -509,7 +578,9 @@ initiator miniProtocolParameters version Apps {..} =
           blockFetchProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (aBlockFetchClient version them))),
           txSubmissionProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aTxSubmissionClient version them)))
+            (InitiatorProtocolOnly (MuxPeerRaw (aTxSubmissionClient version them))),
+          keepAliveProtocol =
+            (InitiatorProtocolOnly (MuxPeerRaw (aKeepAliveClient version them)))
         })
 
 -- | A projection from 'NetworkApplication' to a server-side
@@ -519,7 +590,7 @@ initiator miniProtocolParameters version Apps {..} =
 responder
   :: MiniProtocolParameters
   -> BlockNodeToNodeVersion blk
-  -> Apps m (ConnectionId peer) blk b b b a
+  -> Apps m (ConnectionId peer) blk b b b b a
   -> OuroborosApplication 'ResponderMode peer b m Void a
 responder miniProtocolParameters version Apps {..} =
     nodeToNodeProtocols
@@ -530,5 +601,7 @@ responder miniProtocolParameters version Apps {..} =
           blockFetchProtocol =
             (ResponderProtocolOnly (MuxPeerRaw (aBlockFetchServer version them))),
           txSubmissionProtocol =
-            (ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer version them)))
+            (ResponderProtocolOnly (MuxPeerRaw (aTxSubmissionServer version them))),
+          keepAliveProtocol =
+            (ResponderProtocolOnly (MuxPeerRaw (aKeepAliveServer version them)))
         })

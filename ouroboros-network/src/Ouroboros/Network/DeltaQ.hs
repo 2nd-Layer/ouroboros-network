@@ -32,8 +32,12 @@ module Ouroboros.Network.DeltaQ (
     -- and 'DeltaQ' primitives.
     PeerGSV(..),
     gsvRequestResponseDuration,
+    defaultGSV,
+    fromSample
   ) where
 
+import           Control.Monad.Class.MonadTime (Time (..))
+import           Control.Monad.Class.MonadTimer (microsecondsAsIntToDiffTime)
 import           Data.Semigroup ((<>))
 import           Data.Time.Clock (DiffTime)
 import           Data.Word (Word32)
@@ -239,6 +243,9 @@ data PeerGSV = PeerGSV {
                  inboundGSV  :: !GSV
                }
 
+instance Semigroup PeerGSV where
+    (<>) _ a = a -- TODO add propper EWMA based implementation
+
 -- | This is an example derived operation using the other 'GSV' and 'DeltaQ'
 -- primitives.
 --
@@ -268,4 +275,25 @@ gsvRequestResponseDuration PeerGSV{outboundGSV, inboundGSV}
     deltaqQ99thPercentile $
         gsvTrailingEdgeArrive outboundGSV reqSize
      <> gsvTrailingEdgeArrive inboundGSV respSize
+
+
+defaultGSV :: PeerGSV
+defaultGSV = PeerGSV { outboundGSV, inboundGSV }
+  where
+    default_g = maxG -- start with an unreasonable large G.
+    default_s = 2e-6 -- 4Mbps.
+    inboundGSV  = ballisticGSV default_g default_s (degenerateDistribution 0)
+    outboundGSV = inboundGSV
+
+    maxG :: DiffTime
+    maxG = microsecondsAsIntToDiffTime maxBound / 4
+
+fromSample :: Time -> Time -> SizeInBytes -> PeerGSV
+fromSample (Time start) (Time end) _size =
+    PeerGSV  { outboundGSV, inboundGSV }
+  where
+    g =  (start - end) / 2
+
+    inboundGSV = ballisticGSV g 2e-6 (degenerateDistribution 0)
+    outboundGSV  = inboundGSV
 

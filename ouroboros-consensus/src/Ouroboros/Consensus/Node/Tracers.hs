@@ -18,6 +18,7 @@ import           Control.Tracer (Tracer, nullTracer, showTracing)
 
 import           Ouroboros.Network.BlockFetch (FetchDecision,
                      TraceFetchClientState, TraceLabelPeer)
+import           Ouroboros.Network.KeepAlive (TraceKeepAliveClient)
 import           Ouroboros.Network.TxSubmission.Inbound
                      (TraceTxSubmissionInbound)
 import           Ouroboros.Network.TxSubmission.Outbound
@@ -40,6 +41,7 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
 import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
                      (TraceLocalTxSubmissionServerEvent (..))
 
+
 {-------------------------------------------------------------------------------
   All tracers of a node bundled together
 -------------------------------------------------------------------------------}
@@ -57,6 +59,7 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , mempoolTracer                 :: f (TraceEventMempool blk)
   , forgeTracer                   :: f (TraceForgeEvent blk)
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
+  , keepAliveClientTracer         :: f TraceKeepAliveClient
 
     -- | Called on every slot with the possibly updated 'ForgeState'
     --
@@ -81,6 +84,7 @@ instance (forall a. Semigroup (f a))
       , forgeTracer                   = f forgeTracer
       , forgeStateTracer              = f forgeStateTracer
       , blockchainTimeTracer          = f blockchainTimeTracer
+      , keepAliveClientTracer         = f keepAliveClientTracer
       }
     where
       f :: forall a. Semigroup a
@@ -107,6 +111,7 @@ nullTracers = Tracers
     , forgeTracer                   = nullTracer
     , forgeStateTracer              = nullTracer
     , blockchainTimeTracer          = nullTracer
+    , keepAliveClientTracer         = nullTracer
     }
 
 showTracers :: ( Show blk
@@ -133,6 +138,7 @@ showTracers tr = Tracers
     , forgeTracer                   = showTracing tr
     , forgeStateTracer              = showTracing tr
     , blockchainTimeTracer          = showTracing tr
+    , keepAliveClientTracer         = showTracing tr
     }
 
 {-------------------------------------------------------------------------------

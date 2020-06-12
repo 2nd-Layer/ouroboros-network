@@ -8,43 +8,69 @@ module Ouroboros.Network.KeepAlive
   ( KeepAliveInterval (..)
   , keepAliveClient
   , keepAliveServer
+
+  , TraceKeepAliveClient
   ) where
 
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime (DiffTime)
+import           Control.Exception (assert)
+import qualified Control.Monad.Class.MonadSTM as Lazy
+import           Control.Monad.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
+import           Control.Tracer (Tracer, traceWith)
+import qualified Data.Map.Strict as M
 
-import           Ouroboros.Network.Mux (RunOrStop (..), ScheduledStop)
+import           Ouroboros.Network.Mux (RunOrStop (..))
+import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Server
 
 
 newtype KeepAliveInterval = KeepAliveInterval { keepAliveInterval :: DiffTime }
 
+data TraceKeepAliveClient =
+    AddSample DiffTime
+    deriving Show
 
 keepAliveClient
-    :: forall m.
+    :: forall m peer.
        ( MonadSTM   m
+       , MonadMonotonicTime m
        , MonadTimer m
+       , Ord peer
        )
-    => ScheduledStop m
+    => Tracer m TraceKeepAliveClient
+    -> peer
+    -> (StrictTVar m (M.Map peer PeerGSV))
     -> KeepAliveInterval
+    -> StrictTVar m (Maybe Time)
     -> KeepAliveClient m ()
-keepAliveClient shouldStopSTM KeepAliveInterval { keepAliveInterval } =
+keepAliveClient tracer peer dqCtx KeepAliveInterval { keepAliveInterval } startTimeV =
     SendMsgKeepAlive go
   where
-    decisionSTM :: TVar m Bool
+    payloadSize = 2
+
+    decisionSTM :: Lazy.TVar m Bool
                 -> STM  m RunOrStop
-    decisionSTM delayVar =
-      do
-       readTVar delayVar >>= fmap (const Run) . check
-      `orElse`
-      shouldStopSTM
+    decisionSTM delayVar = Lazy.readTVar delayVar >>= fmap (const Run) . check
 
     go :: m (KeepAliveClient m ())
     go = do
+      endTime <- getMonotonicTime
+      startTime_m <- atomically $ readTVar startTimeV
+      case startTime_m of
+           Just startTime -> do
+               traceWith tracer $ AddSample $ diffTime endTime startTime
+               let sample = fromSample startTime endTime payloadSize
+               atomically $ modifyTVar dqCtx $ \m ->
+                   assert (peer `M.member` m) $
+                   M.adjust (\a -> a <> sample) peer m
+           Nothing        -> return ()
+
       delayVar <- registerDelay keepAliveInterval
       decision <- atomically (decisionSTM delayVar)
+      now <- getMonotonicTime
+      atomically $ writeTVar startTimeV $ Just now
       case decision of
         Run  -> pure (SendMsgKeepAlive go)
         Stop -> pure (SendMsgDone (pure ()))
