@@ -304,7 +304,7 @@ run runargs@RunNodeArgs{..} =
                 version'
                 nodeToNodeVersionData
                 (DictVersion nodeToNodeCodecCBORTerm)
-                (NTN.responder miniProtocolParams version $ ntnApps version)
+                (NTN.responder version' miniProtocolParams version $ ntnApps version)
             | version <- rnNodeToNodeVersions
             , let version' = nodeToNodeProtocolVersion (Proxy @blk) version
             ]
@@ -313,7 +313,7 @@ run runargs@RunNodeArgs{..} =
                 version'
                 nodeToNodeVersionData
                 (DictVersion nodeToNodeCodecCBORTerm)
-                (NTN.initiator miniProtocolParams version $ ntnApps version)
+                (NTN.initiator version' miniProtocolParams version $ ntnApps version)
             | version <- rnNodeToNodeVersions
             , let version' = nodeToNodeProtocolVersion (Proxy @blk) version
             ]
