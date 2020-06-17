@@ -226,7 +226,7 @@ nodeToNodeProtocols MiniProtocolParameters {
                         blockFetchPipeliningMax,
                         txSubmissionMaxUnacked
                       }
-                    protocols version =
+                    protocols _version =
   OuroborosApplication $ \connectionId shouldStopSTM ->
     case protocols connectionId shouldStopSTM of
       NodeToNodeProtocols {
@@ -238,12 +238,7 @@ nodeToNodeProtocols MiniProtocolParameters {
         [ chainSyncMiniProtocol chainSyncProtocol
         , blockFetchMiniProtocol blockFetchProtocol
         , txSubmissionMiniProtocol txSubmissionProtocol
-        ] <>
-        [ keepAliveMiniProtocol keepAliveProtocol
-        | case version of
-               NodeToNodeV_1 -> False
-               NodeToNodeV_2 -> False
-               _             -> True
+        , keepAliveMiniProtocol keepAliveProtocol
         ]
    where
     chainSyncMiniProtocol chainSyncProtocol = MiniProtocol {
