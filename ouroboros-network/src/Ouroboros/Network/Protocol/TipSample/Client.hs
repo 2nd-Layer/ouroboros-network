@@ -1,0 +1,121 @@
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
+module Ouroboros.Network.Protocol.TipSample.Client (
+    -- * Protocol type for the client
+    TipSampleClient (..)
+  , ClientStIdle (..)
+  , HandleTips (..)
+
+    -- * Execution as a typed protocol
+  , tipSampleClientPeer
+
+    -- * Null tip sample client
+  , tipSampleClientNull
+  ) where
+
+
+import           Control.Monad (forever)
+import           Control.Monad.Class.MonadTimer
+
+import           Cardano.Slotting.Slot (SlotNo)
+
+import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Pipelined (N (..), Nat (Succ, Zero))
+
+import           Ouroboros.Network.Protocol.TipSample.Type
+
+
+newtype TipSampleClient tip m a = TipSampleClient {
+    runTipSampleClient :: m (tip -> m (ClientStIdle tip m a))
+  }
+
+tipSampleClientNull :: MonadTimer m => TipSampleClient tip m a
+tipSampleClientNull = TipSampleClient $ forever $ threadDelay 43200 {- one day in seconds -}
+
+
+data ClientStIdle tip m a where
+    SendMsgGetTipAfterSlotNo
+      :: SlotNo
+      -> (tip -> m (ClientStIdle tip m a))
+      -> ClientStIdle tip m a
+
+    SendMsgGetTipAfterTip
+      :: tip
+      -> (tip -> m (ClientStIdle tip m a))
+      -> ClientStIdle tip m a
+
+    SendMsgFollowTip
+      :: Nat (S n)
+      -> HandleTips (S n) tip m a
+      -> ClientStIdle tip m a
+
+    SendMsgDone
+      :: a
+      -> ClientStIdle tip m a
+
+
+-- | Handle incoming tips after sending 'MsgFollowTip' message.
+--
+data HandleTips (n :: N) tip m a where
+    -- | Receive a tip, await for more.
+    --
+    ReceiveTip
+      :: (tip -> m (HandleTips (S n) tip m a))
+      -> HandleTips (S (S n)) tip m a
+
+    -- | Receive last tip, continue in 'StIdle' state.
+    --
+    ReceiveLastTip
+      :: (tip -> m (ClientStIdle tip m a))
+      -> HandleTips (S Z) tip m a
+
+
+tipSampleClientPeer
+    :: forall tip m a.
+       Functor m
+    => TipSampleClient tip m a
+    -> Peer (TipSample tip) AsClient (StInit StClientRequest) m a
+tipSampleClientPeer (TipSampleClient mclient) =
+    Yield (ClientAgency TokInitClient) MsgGetCurrentTip $
+    Await (ServerAgency TokInitServer) $
+      \(MsgCurrentTip tip) ->
+        Effect $ (Effect . fmap idlePeer . ($ tip)) <$> mclient
+  where
+    idlePeer :: ClientStIdle tip m a
+             -> Peer (TipSample tip) AsClient StIdle m a
+
+    idlePeer (SendMsgGetTipAfterSlotNo slotNo next) =
+      Yield (ClientAgency TokIdle) (MsgGetTipAfterSlotNo slotNo) $
+      Await (ServerAgency (TokBusy TokBlockUntilSlot)) $
+        \(MsgTip tip) ->
+          Effect $ idlePeer <$> next tip
+
+    idlePeer (SendMsgGetTipAfterTip tip next) =
+      Yield (ClientAgency TokIdle) (MsgGetTipAfterTip tip) $
+      Await (ServerAgency (TokBusy TokBlockUntilTip)) $
+        \(MsgTip tip') ->
+          Effect $ idlePeer <$> next tip'
+
+    idlePeer (SendMsgFollowTip n k) =
+      Yield (ClientAgency TokIdle) (MsgFollowTip n) $
+      followTipPeer n k
+
+    idlePeer (SendMsgDone a) =
+      Yield (ClientAgency TokIdle) MsgDone $
+        Done TokDone a
+
+
+    followTipPeer :: Nat (S n)
+                  -> HandleTips (S n) tip m a
+                  -> Peer (TipSample tip) AsClient (StFollowTip (S n)) m a
+
+    followTipPeer n@(Succ Zero) (ReceiveLastTip k) =
+      Await (ServerAgency (TokFollowTip n)) $ \(MsgNextTipDone tip) ->
+        Effect $ idlePeer <$> k tip
+
+    followTipPeer n@(Succ m@(Succ _)) (ReceiveTip k) =
+      Await (ServerAgency (TokFollowTip n)) $ \(MsgNextTip tip) ->
+        Effect $ followTipPeer m <$> k tip
