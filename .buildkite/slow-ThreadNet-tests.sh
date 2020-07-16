@@ -40,7 +40,7 @@ function finish {
     if [ "true" = "${BUILDKITE-}" ]; then
         # Collect related logs into one artifact file
         true | head -n999999 $(find . -name '*-Cardano.log' | sort) \
-            1>"$logdir"/Cardano-artifact.log
+            1>"${logdir}/Cardano-artifact.log"
         true | head -n999999 $(find . -name '*-RealTPraos.log' | sort) \
             1>"${logdir}/RealTPraos-artifact.log"
 
@@ -126,6 +126,6 @@ qcSizes="$(replicate $ncores 1000) $(replicate $(expr 5 '*' $ncores) 100)"
 "${fromNix}/gnuparallel-exe/bin/parallel" \
     "-j$ncores" \
     --link \
-    innerCommand "$logdir" "$fromNix" RealTPraos \
+    innerCommand "$logdir" "$fromNix" \
     ::: Cardano RealTPraos \
     ::: $(merge "$qcSizes" "$qcSizes")
