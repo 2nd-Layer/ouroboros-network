@@ -99,6 +99,7 @@ executable db-converter
                      , streaming
                      , text
 
+                     , ouroboros-network
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
 

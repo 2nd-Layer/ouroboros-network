@@ -2,8 +2,6 @@ module Ouroboros.Consensus.Config.SupportsNode (
     ConfigSupportsNode (..)
   ) where
 
-import           Cardano.Crypto (ProtocolMagicId)
-
 import           Ouroboros.Network.Magic (NetworkMagic)
 
 import           Ouroboros.Consensus.Block.Abstract (BlockConfig)
@@ -15,4 +13,4 @@ class ConfigSupportsNode blk where
 
   getSystemStart     :: BlockConfig blk -> SystemStart
   getNetworkMagic    :: BlockConfig blk -> NetworkMagic
-  getProtocolMagicId :: BlockConfig blk -> ProtocolMagicId
+

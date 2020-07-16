@@ -51,7 +51,6 @@ import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
 
-import           Cardano.Crypto.ProtocolMagic
 import           Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF (..))
 import           Cardano.Slotting.EpochInfo
 
@@ -172,7 +171,6 @@ data instance CodecConfig BlockA = CCfgA
 instance ConfigSupportsNode BlockA where
   getSystemStart     _ = SystemStart dawnOfTime
   getNetworkMagic    _ = NetworkMagic 0
-  getProtocolMagicId _ = ProtocolMagicId 0
 
 instance StandardHash BlockA
 

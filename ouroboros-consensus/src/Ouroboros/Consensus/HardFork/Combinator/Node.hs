@@ -25,7 +25,6 @@ instance (All ConfigSupportsNode xs, IsNonEmpty xs)
       => ConfigSupportsNode (HardForkBlock xs) where
   getSystemStart     = getSameConfigValue getSystemStart
   getNetworkMagic    = getSameConfigValue getNetworkMagic
-  getProtocolMagicId = getSameConfigValue getProtocolMagicId
 
 {-------------------------------------------------------------------------------
   Auxiliary

@@ -162,7 +162,6 @@ data instance BlockConfig (DualBlock m a) = DualBlockConfig {
 instance ConfigSupportsNode m => ConfigSupportsNode (DualBlock m a) where
   getSystemStart     = getSystemStart     . dualBlockConfigMain
   getNetworkMagic    = getNetworkMagic    . dualBlockConfigMain
-  getProtocolMagicId = getProtocolMagicId . dualBlockConfigMain
 
 {-------------------------------------------------------------------------------
   Splitting the config
