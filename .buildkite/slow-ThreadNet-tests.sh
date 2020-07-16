@@ -32,16 +32,14 @@ mkdir -p "$fromNix"
 
 # Always do these final steps
 function finish {
-    cd "$logdir"
-
     # Dump to stdout the last line of each log file
-    true | tail -n1 $(find . -name '*.log' | sort)
+    (cd "$logdir"; true | tail -n1 $(find . -name '*.log' | sort))
 
     if [ "true" = "${BUILDKITE-}" ]; then
         # Collect related logs into one artifact file
-        true | head -n999999 $(find . -name '*-Cardano.log' | sort) \
+        true | head -n999999 $(find "$logdir" -name '*-Cardano.log' | sort) \
             1>"${logdir}/Cardano-artifact.log"
-        true | head -n999999 $(find . -name '*-RealTPraos.log' | sort) \
+        true | head -n999999 $(find "$logdir" -name '*-RealTPraos.log' | sort) \
             1>"${logdir}/RealTPraos-artifact.log"
 
         # Upload the artifact files as BuildKite artifacts
