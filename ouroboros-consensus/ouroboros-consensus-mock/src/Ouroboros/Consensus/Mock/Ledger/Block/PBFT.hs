@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PBFT (
   , SimplePBftHeader
   , SimplePBftExt(..)
   , SignedSimplePBft(..)
+  , forgePBftExt
   ) where
 
 import           Codec.Serialise (Serialise (..), serialise)
@@ -33,6 +34,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
+import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
@@ -100,23 +102,8 @@ instance SignedHeader (SimplePBftHeader c c') where
 
 instance ( SimpleCrypto c
          , PBftCrypto c'
-         , Signable (PBftDSIGN c') (SignedSimplePBft c c')
-         , ContextDSIGN (PBftDSIGN c') ~ ()
          , Serialise (PBftVerKeyHash c')
          ) => RunMockBlock c (SimplePBftExt c c') where
-  forgeExt _cfg () isLeader SimpleBlock{..} = SimpleBlock {
-        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-      , simpleBody   = simpleBody
-      }
-    where
-      SimpleHeader{..} = simpleHeader
-      ext :: SimplePBftExt c c'
-      ext = SimplePBftExt $
-        forgePBftFields
-          (const ())
-          isLeader
-          SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
-
   mockProtocolMagicId = const constructMockProtocolMagicId
 
 instance ( SimpleCrypto c
@@ -137,6 +124,30 @@ instance ( SimpleCrypto c
 pretendTicked :: PBftLedgerView PBftMockCrypto
               -> Ticked (PBftLedgerView PBftMockCrypto)
 pretendTicked (PBftLedgerView ds) = TickedPBftLedgerView ds
+
+{-------------------------------------------------------------------------------
+  Forging
+-------------------------------------------------------------------------------}
+
+forgePBftExt :: forall c c'.
+                ( SimpleCrypto c
+                , PBftCrypto c'
+                , Signable (PBftDSIGN c') (SignedSimplePBft c c')
+                , ContextDSIGN (PBftDSIGN c') ~ ()
+                )
+             => ForgeExt c (SimplePBftExt c c')
+forgePBftExt = ForgeExt $ \_cfg () isLeader SimpleBlock{..} ->
+    let SimpleHeader{..} = simpleHeader
+        ext :: SimplePBftExt c c'
+        ext = SimplePBftExt $
+          forgePBftFields
+            (const ())
+            isLeader
+            SignedSimplePBft { signedSimplePBft = simpleHeaderStd }
+    in SimpleBlock {
+        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+      , simpleBody   = simpleBody
+      }
 
 {-------------------------------------------------------------------------------
   Serialisation

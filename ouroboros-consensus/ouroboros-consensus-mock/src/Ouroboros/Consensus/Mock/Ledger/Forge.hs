@@ -1,6 +1,13 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
+
 module Ouroboros.Consensus.Mock.Ledger.Forge (
-    forgeSimple
+    ForgeExt (..)
+  , forgeSimple
   ) where
 
 import           Cardano.Binary (toCBOR)
@@ -14,20 +21,34 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Mock.Ledger.Block
-import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 
-forgeSimple ::
-     forall c ext. RunMockBlock c ext
-  => ForgeStateInfo (BlockProtocol (SimpleBlock c ext))
-  -> TopLevelConfig (SimpleBlock c ext)
-  -> BlockNo                               -- ^ Current block number
-  -> SlotNo                                -- ^ Current slot number
-  -> TickedLedgerState (SimpleBlock c ext) -- ^ Current ledger
-  -> [GenTx (SimpleBlock c ext)]           -- ^ Txs to include
-  -> IsLeader (BlockProtocol (SimpleBlock c ext))
-  -> SimpleBlock c ext
-forgeSimple forgeStateInfo cfg curBlock curSlot tickedLedger txs proof =
+-- | Construct the protocol specific part of the block
+--
+-- This is used in 'forgeSimple', which takes care of the generic part of the
+-- mock block.
+newtype ForgeExt c ext = ForgeExt {
+      forgeExt :: TopLevelConfig                (SimpleBlock c ext)
+               -> ForgeStateInfo (BlockProtocol (SimpleBlock c ext))
+               -> IsLeader       (BlockProtocol (SimpleBlock c ext))
+               -> SimpleBlock' c ext ()
+               -> SimpleBlock c ext
+    }
+
+forgeSimple :: forall c ext.
+               ( SimpleCrypto c
+               , MockProtocolSpecific c ext
+               )
+            => ForgeExt c ext
+            -> ForgeStateInfo (BlockProtocol (SimpleBlock c ext))
+            -> TopLevelConfig (SimpleBlock c ext)
+            -> BlockNo                               -- ^ Current block number
+            -> SlotNo                                -- ^ Current slot number
+            -> TickedLedgerState (SimpleBlock c ext) -- ^ Current ledger
+            -> [GenTx (SimpleBlock c ext)]           -- ^ Txs to include
+            -> IsLeader (BlockProtocol (SimpleBlock c ext))
+            -> SimpleBlock c ext
+forgeSimple ForgeExt { forgeExt } forgeStateInfo cfg curBlock curSlot tickedLedger txs proof =
     forgeExt cfg forgeStateInfo proof $ SimpleBlock {
         simpleHeader = mkSimpleHeader encode stdHeader ()
       , simpleBody   = body

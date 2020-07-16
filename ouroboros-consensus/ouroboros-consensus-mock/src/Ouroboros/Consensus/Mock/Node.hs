@@ -65,9 +65,10 @@ simpleBlockForging ::
      , Monad m
      )
   => CanBeLeader (BlockProtocol (SimpleBlock c ext))
+  -> ForgeExt c ext
   -> BlockForging m (SimpleBlock c ext)
-simpleBlockForging canBeLeader = BlockForging {
+simpleBlockForging canBeLeader forgeExt = BlockForging {
       updateForgeState = \_ -> return ()
     , canBeLeader
-    , forgeBlock = return .....: forgeSimple ()
+    , forgeBlock = return .....: forgeSimple forgeExt ()
     }

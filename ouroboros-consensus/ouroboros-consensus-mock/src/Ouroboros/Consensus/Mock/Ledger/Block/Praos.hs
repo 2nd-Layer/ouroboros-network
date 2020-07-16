@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block.Praos (
   , SimplePraosHeader
   , SimplePraosExt(..)
   , SignedSimplePraos(..)
+  , forgePraosExt
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -30,11 +31,13 @@ import           Cardano.Crypto.Util
 import           Cardano.Prelude (NoUnexpectedThunks)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.Block
+import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
@@ -104,24 +107,7 @@ instance PraosCrypto c' => SignedHeader (SimplePraosHeader c c') where
 
 instance ( SimpleCrypto c
          , PraosCrypto c'
-         , Signable (PraosKES c') (SignedSimplePraos c c')
          ) => RunMockBlock c (SimplePraosExt c c') where
-  forgeExt _cfg hotKey isLeader SimpleBlock{..} =
-      SimpleBlock {
-          simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-        , simpleBody   = simpleBody
-        }
-    where
-      SimpleHeader{..} = simpleHeader
-
-      ext :: SimplePraosExt c c'
-      ext = SimplePraosExt $
-        forgePraosFields hotKey isLeader $ \praosExtraFields ->
-          SignedSimplePraos {
-              signedSimplePraos = simpleHeaderStd
-            , signedPraosFields = praosExtraFields
-            }
-
   mockProtocolMagicId = const constructMockProtocolMagicId
 
 instance ( SimpleCrypto c
@@ -151,6 +137,34 @@ stakeDist = equalStakeDist . simpleMockLedgerConfig
 
 pretendTicked :: StakeDist -> Ticked StakeDist
 pretendTicked (StakeDist sd) = TickedStakeDist sd
+
+{-------------------------------------------------------------------------------
+  Forging
+-------------------------------------------------------------------------------}
+
+forgePraosExt :: forall c c'.
+                 ( SimpleCrypto c
+                 , PraosCrypto c'
+                 , Signable (PraosKES c') (SignedSimplePraos c c')
+                 )
+              => ForgeExt c (SimplePraosExt c c')
+forgePraosExt = ForgeExt $ \cfg hotKey isLeader SimpleBlock{..} ->
+    let SimpleHeader{..} = simpleHeader
+
+        ext :: SimplePraosExt c c'
+        ext = SimplePraosExt $
+          forgePraosFields (configConsensus cfg)
+                           hotKey
+                           isLeader
+                           $ \praosExtraFields ->
+            SignedSimplePraos {
+                signedSimplePraos = simpleHeaderStd
+              , signedPraosFields = praosExtraFields
+              }
+    in SimpleBlock {
+        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+      , simpleBody   = simpleBody
+      }
 
 {-------------------------------------------------------------------------------
   Serialisation

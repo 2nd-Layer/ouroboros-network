@@ -141,11 +141,12 @@ evolveKey slotNo (HotKey oldKey) = do
 forgePraosFields :: ( PraosCrypto c
                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
                     )
-                 => HotKey c
+                 => ConsensusConfig (Praos c)
+                 -> HotKey c
                  -> PraosProof c
                  -> (PraosExtraFields c -> toSign)
                  -> PraosFields c toSign
-forgePraosFields (HotKey key) PraosProof{..} mkToSign =
+forgePraosFields _ (HotKey key) PraosProof{..} mkToSign =
     PraosFields {
         praosSignature   = signature
       , praosExtraFields = signedFields

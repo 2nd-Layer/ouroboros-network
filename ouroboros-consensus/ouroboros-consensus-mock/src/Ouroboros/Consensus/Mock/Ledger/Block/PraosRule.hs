@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PraosRule (
   , SimplePraosRuleExt(..)
   , SimplePraosRuleHeader
   , PraosCryptoUnused
+  , forgePraosRuleExt
   ) where
 
 import           Codec.Serialise (Serialise (..))
@@ -31,6 +32,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
+import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
@@ -85,15 +87,6 @@ instance SimpleCrypto c => MockProtocolSpecific c SimplePraosRuleExt where
 -------------------------------------------------------------------------------}
 
 instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
-  forgeExt cfg () _cid SimpleBlock{..} =
-      SimpleBlock {
-          simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-        , simpleBody   = simpleBody
-        }
-    where
-      ext = SimplePraosRuleExt $ wlsConfigNodeId (configConsensus cfg)
-      SimpleHeader{..} = simpleHeader
-
   mockProtocolMagicId = const constructMockProtocolMagicId
 
 instance
@@ -117,6 +110,19 @@ instance PraosCrypto PraosCryptoUnused where
   type PraosKES  PraosCryptoUnused = NeverKES
   type PraosVRF  PraosCryptoUnused = NeverVRF
   type PraosHash PraosCryptoUnused = NeverHash
+
+{-------------------------------------------------------------------------------
+  Forging
+-------------------------------------------------------------------------------}
+
+forgePraosRuleExt :: SimpleCrypto c => ForgeExt c SimplePraosRuleExt
+forgePraosRuleExt = ForgeExt $ \cfg _ _ SimpleBlock{..} ->
+    let ext = SimplePraosRuleExt $ wlsConfigNodeId (configConsensus cfg)
+        SimpleHeader{..} = simpleHeader
+    in SimpleBlock {
+        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+      , simpleBody   = simpleBody
+      }
 
 {-------------------------------------------------------------------------------
   Serialisation

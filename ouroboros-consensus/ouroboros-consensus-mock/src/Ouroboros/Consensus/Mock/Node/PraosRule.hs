@@ -58,7 +58,7 @@ protocolInfoPraosRule numCoreNodes
         { ledgerState = genesisSimpleLedgerState addrDist
         , headerState = genesisHeaderState ()
         }
-    , pInfoBlockForging = Just (return (simpleBlockForging ()))
+    , pInfoBlockForging = Just (return (simpleBlockForging () forgePraosRuleExt))
     }
   where
     addrDist :: AddrDist

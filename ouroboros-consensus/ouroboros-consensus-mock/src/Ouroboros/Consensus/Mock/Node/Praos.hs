@@ -104,6 +104,7 @@ praosBlockForging canBeLeader initHotKey = do
           hotKey <- readMVar varHotKey
           return $
             forgeSimple
+              forgePraosExt
               hotKey
               cfg
               curNo

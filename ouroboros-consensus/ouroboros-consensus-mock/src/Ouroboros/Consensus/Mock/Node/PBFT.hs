@@ -42,7 +42,7 @@ protocolInfoMockPBFT params eraParams nid =
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState S.empty)
-      , pInfoBlockForging = Just (return (simpleBlockForging canBeLeader))
+      , pInfoBlockForging = Just (return (simpleBlockForging canBeLeader forgePBftExt))
       }
   where
     canBeLeader :: PBftIsLeader PBftMockCrypto
