@@ -42,7 +42,7 @@ function finish {
         true | head -n999999 $(find . -name '*-Cardano.log' | sort) \
             1>"$logdir"/Cardano-artifact.log
         true | head -n999999 $(find . -name '*-RealTPraos.log' | sort) \
-            1>"$logdir"/RealTPraos-artifact.log
+            1>"${logdir}/RealTPraos-artifact.log"
 
         # Upload the artifact files as BuildKite artifacts
         #
@@ -50,7 +50,7 @@ function finish {
         # artifact poorly when it's clicked in the UI. BuildKite v3 might allow
         # it via `--content-type`, but it seems we're still running v2, which
         # doesn't.
-	buildkite-agent artifact upload "$logdir/**/*-artifact.log"
+	buildkite-agent artifact upload "${logdir}/**/*-artifact.log"
     fi
 }
 trap finish EXIT
@@ -61,8 +61,8 @@ nixdir="$(dirname $0)/.."
 # Ensure the invocations below of Nix-built exes see and use the desired locale
 #
 # See https://nixos.org/nixpkgs/manual/#locales
-nix build -f "$nixdir" nightly-checks.glibcLocales -o "$fromNix/glibcLocales"
-export LOCALE_ARCHIVE=$(readlink -m "$fromNix/glibcLocales")/lib/locale/locale-archive
+nix build -f "$nixdir" nightly-checks.glibcLocales -o "${fromNix}/glibcLocales"
+export LOCALE_ARCHIVE=$(readlink -m "${fromNix}/glibcLocales")/lib/locale/locale-archive
 export LC_ALL=en_US.utf8
 
 # We use GNU parallel to manage multiple processes
@@ -70,21 +70,22 @@ export LC_ALL=en_US.utf8
 # This BuildKite job runs on the benchmarking BuildKite queue, which means
 # it'll be running alone on the machine. Thus, we want to keep the CPU
 # saturated.
-nix build -f "$nixdir" nightly-checks.gnuparallel -o "$fromNix/gnuparallel-exe"
+nix build -f "$nixdir" nightly-checks.gnuparallel -o "${fromNix}/gnuparallel-exe"
 
 # Build/fetch the exes that run the ThreadNet tests
-nix build -f "$nixdir" nightly-checks.Cardano    -o "$fromNix/Cardano-exe"
-nix build -f "$nixdir" nightly-checks.RealTPraos -o "$fromNix/RealTPraos-exe"
+nix build -f "$nixdir" nightly-checks.Cardano    -o "${fromNix}/Cardano-exe"
+nix build -f "$nixdir" nightly-checks.RealTPraos -o "${fromNix}/RealTPraos-exe"
 
 # GNU parallel will run multiple invocations of this command
 function innerCommand {
     uniqueInvocationId="$(printf %03d $PARALLEL_SEQ)"
     logdir="$1"
-    suite="$2"
-    n="$3"
+    fromNix="$2"
+    suite="$3"
+    n="$4"
 
     # Run the specified tests with the nightly flag set
-    "$fromNix/${suite}-exe/bin/test" \
+    "${fromNix}/${suite}-exe/bin/test" \
         --pattern "$suite" \
         --quickcheck-tests="$n" \
         --iohk-enable-nightly-tests \
@@ -95,7 +96,7 @@ export -f innerCommand   # now visible to processes spawned by GNU parallel
 # The number of *physical* cores on this machine
 #
 # We avoid HyperThreads et al, at least for now.
-ncores="$("$fromNix/gnuparallel-exe/bin/parallel" --number-of-cores)"
+ncores="$("${fromNix}/gnuparallel-exe/bin/parallel" --number-of-cores)"
 
 # How many tests to run per invocation, and how many invocations to run
 #
@@ -122,7 +123,9 @@ ncores="$("$fromNix/gnuparallel-exe/bin/parallel" --number-of-cores)"
 qcSizes="$(replicate $ncores 1000) $(replicate $(expr 5 '*' $ncores) 100)"
 
 # Run the invocations, but never more at once than the number of physical cores
-"$fromNix/gnuparallel-exe/bin/parallel" "-j$ncores" \
-    innerCommand "$logdir" RealTPraos \
+"${fromNix}/gnuparallel-exe/bin/parallel" \
+    "-j$ncores" \
+    --link \
+    innerCommand "$logdir" "$fromNix" RealTPraos \
     ::: Cardano RealTPraos \
     ::: $(merge "$qcSizes" "$qcSizes")
