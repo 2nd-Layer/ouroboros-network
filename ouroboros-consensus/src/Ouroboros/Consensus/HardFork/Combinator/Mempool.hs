@@ -26,10 +26,13 @@ module Ouroboros.Consensus.HardFork.Combinator.Mempool (
 import           Control.Monad.Except
 import           Data.Functor.Product
 import           Data.SOP.Strict
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 
 import           Cardano.Prelude (NoUnexpectedThunks)
+
+import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -53,6 +56,8 @@ data HardForkApplyTxErr xs =
   | HardForkApplyTxErrWrongEra !(MismatchEraInfo xs)
   deriving (Generic)
 
+instance Typeable xs => ShowProxy (HardForkApplyTxErr xs) where
+
 hardForkApplyTxErrToEither :: HardForkApplyTxErr xs
                            -> Either (MismatchEraInfo xs) (OneEraApplyTxErr xs)
 hardForkApplyTxErrToEither (HardForkApplyTxErrFromEra  err) = Right err
@@ -71,6 +76,8 @@ newtype instance GenTx (HardForkBlock xs) = HardForkGenTx {
       getHardForkGenTx :: OneEraGenTx xs
     }
   deriving (Eq, Show, NoUnexpectedThunks)
+
+instance Typeable xs => ShowProxy (GenTx (HardForkBlock xs)) where
 
 type instance ApplyTxErr (HardForkBlock xs) = HardForkApplyTxErr xs
 
@@ -156,6 +163,8 @@ newtype instance TxId (GenTx (HardForkBlock xs)) = HardForkGenTxId {
       getHardForkGenTxId :: OneEraGenTxId xs
     }
   deriving (Show, Eq, Ord, NoUnexpectedThunks)
+
+instance Typeable xs => ShowProxy (TxId (GenTx (HardForkBlock xs))) where
 
 instance CanHardFork xs => HasTxId (GenTx (HardForkBlock xs)) where
   txId = HardForkGenTxId . OneEraGenTxId
