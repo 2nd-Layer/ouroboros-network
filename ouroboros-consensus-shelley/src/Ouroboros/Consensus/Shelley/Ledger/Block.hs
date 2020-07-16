@@ -40,6 +40,7 @@ import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (coerce)
 import           Data.FingerTree.Strict (Measured (..))
 import           Data.Proxy (Proxy (..))
+import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (Annotator (..), FromCBOR (..),
@@ -50,7 +51,7 @@ import           Cardano.Prelude (NoUnexpectedThunks (..))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
-import           Ouroboros.Consensus.Util (hashFromBytesE)
+import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesE)
 import           Ouroboros.Consensus.Util.Condense
 
 import qualified Shelley.Spec.Ledger.BlockChain as SL
@@ -97,6 +98,8 @@ data ShelleyBlock c = ShelleyBlock {
     }
   deriving (Eq, Show)
 
+instance Typeable c => ShowProxy (ShelleyBlock c) where
+
 type instance HeaderHash (ShelleyBlock c) = ShelleyHash c
 
 mkShelleyBlock :: Crypto c => SL.Block c -> ShelleyBlock c
@@ -110,6 +113,8 @@ data instance Header (ShelleyBlock c) = ShelleyHeader {
     , shelleyHeaderHash :: !(ShelleyHash c)
     }
   deriving (Eq, Generic, Show, NoUnexpectedThunks)
+
+instance Typeable c => ShowProxy (Header (ShelleyBlock c)) where
 
 instance Crypto c => GetHeader (ShelleyBlock c) where
   getHeader (ShelleyBlock rawBlk hdrHash) = ShelleyHeader {
