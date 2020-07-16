@@ -10,6 +10,17 @@ function replicate {
     { yes "$2" || true; } | head "-n$1" | tr '\n' ' '
 }
 
+# For example, `interleave '1 2 3' '4 5 6'` becomes `'1 4 2 5 3 6 '`.
+#
+# Note: White-space is not preserved, but words will remain separate.
+function merge {
+    paste -d' ' \
+        <(echo "$1" | tr ' ' '\n') \
+        <(echo "$2" | tr ' ' '\n') \
+	| grep -vE '^ *$' \
+	| tr '\n' ' '
+}
+
 # Where to accumulate log files
 logdir="slow-tests-logs-${BUILDKITE_JOB_ID:-local}"
 mkdir -p "$logdir"
@@ -28,6 +39,8 @@ function finish {
 
     if [ "true" = "${BUILDKITE-}" ]; then
         # Collect related logs into one artifact file
+        true | head -n999999 $(find . -name '*-Cardano.log' | sort) \
+            1>"$logdir"/Cardano-artifact.log
         true | head -n999999 $(find . -name '*-RealTPraos.log' | sort) \
             1>"$logdir"/RealTPraos-artifact.log
 
@@ -60,6 +73,7 @@ export LC_ALL=en_US.utf8
 nix build -f "$nixdir" nightly-checks.gnuparallel -o "$fromNix/gnuparallel-exe"
 
 # Build/fetch the exes that run the ThreadNet tests
+nix build -f "$nixdir" nightly-checks.Cardano    -o "$fromNix/Cardano-exe"
 nix build -f "$nixdir" nightly-checks.RealTPraos -o "$fromNix/RealTPraos-exe"
 
 # GNU parallel will run multiple invocations of this command
@@ -110,4 +124,5 @@ qcSizes="$(replicate $ncores 1000) $(replicate $(expr 5 '*' $ncores) 100)"
 # Run the invocations, but never more at once than the number of physical cores
 "$fromNix/gnuparallel-exe/bin/parallel" "-j$ncores" \
     innerCommand "$logdir" RealTPraos \
-    ::: $qcSizes
+    ::: Cardano RealTPraos \
+    ::: $(merge "$qcSizes" "$qcSizes")
