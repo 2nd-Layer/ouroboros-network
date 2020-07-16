@@ -84,7 +84,7 @@ function innerCommand {
 
     # Run the specified tests with the nightly flag set
     "${fromNix}/${suite}-exe/bin/test" \
-        --pattern "$suite" \
+        --pattern "$suite ThreadNet" \
         --quickcheck-tests="$n" \
         --iohk-enable-nightly-tests \
       1>"${logdir}/${uniqueInvocationId}-${suite}.log" 2>&1
