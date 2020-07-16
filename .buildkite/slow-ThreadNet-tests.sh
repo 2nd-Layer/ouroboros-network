@@ -13,7 +13,7 @@ function replicate {
 # For example, `interleave '1 2 3' '4 5 6'` becomes `'1 4 2 5 3 6 '`.
 #
 # Note: White-space is not preserved, but words will remain separate.
-function merge {
+function interleave {
     paste -d' ' \
         <(echo "$1" | tr ' ' '\n') \
         <(echo "$2" | tr ' ' '\n') \
@@ -128,4 +128,4 @@ qcSizes="$(replicate $ncores 1000) $(replicate $(expr 5 '*' $ncores) 100)"
     --link \
     innerCommand "$logdir" "$fromNix" \
     ::: Cardano RealTPraos \
-    ::: $(merge "$qcSizes" "$qcSizes")
+    ::: $(interleave "$qcSizes" "$qcSizes")
