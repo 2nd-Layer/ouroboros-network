@@ -141,12 +141,11 @@ evolveKey slotNo (HotKey oldKey) = do
 forgePraosFields :: ( PraosCrypto c
                     , Cardano.Crypto.KES.Class.Signable (PraosKES c) toSign
                     )
-                 => ConsensusConfig (Praos c)
-                 -> HotKey c
+                 => HotKey c
                  -> PraosProof c
                  -> (PraosExtraFields c -> toSign)
                  -> PraosFields c toSign
-forgePraosFields PraosConfig{..} (HotKey key) PraosProof{..} mkToSign =
+forgePraosFields (HotKey key) PraosProof{..} mkToSign =
     PraosFields {
         praosSignature   = signature
       , praosExtraFields = signedFields
@@ -246,10 +245,6 @@ data instance ConsensusConfig (Praos c) = PraosConfig
 instance PraosCrypto c => ChainSelection (Praos c) where
   -- Use defaults
 
-instance PraosCrypto c => HasChainIndepState (Praos c) where
-  type ChainIndepState (Praos c) = HotKey c
-  updateChainIndepState _ () = evolveKey
-
 newtype PraosChainDepState c = PraosChainDepState {
       praosHistory :: [BlockInfo c]
     }
@@ -272,13 +267,14 @@ data instance Ticked (PraosChainDepState c) = TickedPraosChainDepState {
 instance PraosCrypto c => ConsensusProtocol (Praos c) where
   protocolSecurityParam = praosSecurityParam . praosParams
 
-  type LedgerView    (Praos c) = StakeDist
-  type IsLeader      (Praos c) = PraosProof           c
-  type ValidationErr (Praos c) = PraosValidationError c
-  type ValidateView  (Praos c) = PraosValidateView    c
-  type ChainDepState (Praos c) = PraosChainDepState   c
-  type CanBeLeader   (Praos c) = CoreNodeId
-  type CannotLead    (Praos c) = Void
+  type LedgerView     (Praos c) = StakeDist
+  type IsLeader       (Praos c) = PraosProof           c
+  type ValidationErr  (Praos c) = PraosValidationError c
+  type ValidateView   (Praos c) = PraosValidateView    c
+  type ChainDepState  (Praos c) = PraosChainDepState   c
+  type CanBeLeader    (Praos c) = CoreNodeId
+  type CannotLead     (Praos c) = Void
+  type ForgeStateInfo (Praos c) = HotKey               c
 
   checkIsLeader cfg@PraosConfig{..} nid _cis slot (TickedPraosChainDepState _u  cds) = do
       if fromIntegral (getOutputVRFNatural (certifiedOutput y)) < t

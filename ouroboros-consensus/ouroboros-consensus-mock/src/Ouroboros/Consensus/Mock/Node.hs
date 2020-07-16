@@ -2,12 +2,14 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Mock.Node (
     CodecConfig (..)
+  , simpleBlockForging
   ) where
 
 import           Codec.Serialise (Serialise)
@@ -22,6 +24,8 @@ import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Node.Serialisation ()
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Util ((.....:))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 
@@ -41,7 +45,6 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
            -- some of the tests loop, but only when compiled with @-O2@ ; with
            -- @-O0@ it is perfectly fine. ghc bug?!
          , BlockSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
-         , CanForge (SimpleBlock SimpleMockCrypto ext)
          , Typeable ext
          , Serialise ext
          , RunMockBlock SimpleMockCrypto ext
@@ -51,3 +54,20 @@ instance ( LedgerSupportsProtocol (SimpleBlock SimpleMockCrypto ext)
     EpochSize $ 10 * maxRollbacks (configSecurityParam cfg)
   nodeCheckIntegrity        = \_ _ -> True
   nodeGetBinaryBlockInfo    = simpleBlockBinaryBlockInfo
+
+{-------------------------------------------------------------------------------
+  BlockForging
+-------------------------------------------------------------------------------}
+
+simpleBlockForging ::
+     ( RunMockBlock c ext
+     , ForgeStateInfo (BlockProtocol (SimpleBlock c ext)) ~ ()
+     , Monad m
+     )
+  => CanBeLeader (BlockProtocol (SimpleBlock c ext))
+  -> BlockForging m (SimpleBlock c ext)
+simpleBlockForging canBeLeader = BlockForging {
+      updateForgeState = \_ -> return ()
+    , canBeLeader
+    , forgeBlock = return .....: forgeSimple ()
+    }

@@ -44,13 +44,12 @@ import           Data.Coerce (coerce)
 import           Data.Function (on)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
 import           Data.Ord (Down (..))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 
 import           Cardano.Crypto.DSIGN.Class (VerKeyDSIGN)
-import           Cardano.Crypto.KES.Class (SignedKES, signedKES)
+import           Cardano.Crypto.KES.Class (SignedKES)
 import qualified Cardano.Crypto.KES.Class as KES
 import           Cardano.Crypto.VRF.Class (CertifiedVRF, SignKeyVRF, VerKeyVRF,
                      deriveVerKeyVRF)
@@ -75,9 +74,8 @@ import qualified Shelley.Spec.Ledger.OCert as SL
 import qualified Shelley.Spec.Ledger.STS.Tickn as STS
 
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto.HotKey
-                     (HotKey (..))
-import qualified Ouroboros.Consensus.Shelley.Protocol.Crypto.HotKey as HotKey
+import           Ouroboros.Consensus.Shelley.Protocol.HotKey (HotKey (..))
+import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
 import           Ouroboros.Consensus.Shelley.Protocol.State (TPraosState)
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
 import           Ouroboros.Consensus.Shelley.Protocol.Util
@@ -127,22 +125,20 @@ deriving instance TPraosCrypto c => Show (TPraosToSign c)
 
 forgeTPraosFields :: ( TPraosCrypto c
                      , KES.Signable (KES c) toSign
+                     , Monad m
                      )
-                  => HotKey c
+                  => HotKey c m
                   -> IsLeader (TPraos c)
                   -> (TPraosToSign c -> toSign)
-                  -> TPraosFields c toSign
-forgeTPraosFields HotKey { hkEvolution, hkKey } TPraosProof{..} mkToSign =
-    TPraosFields {
+                  -> m (TPraosFields c toSign)
+forgeTPraosFields hotKey TPraosProof{..} mkToSign = do
+    signature <- sign hotKey toSign
+    return TPraosFields {
         tpraosSignature = signature
-      , tpraosToSign    = mkToSign signedFields
+      , tpraosToSign    = toSign
       }
   where
-    signature = signedKES
-      ()
-      hkEvolution
-      (mkToSign signedFields)
-      hkKey
+    toSign = mkToSign signedFields
 
     TPraosIsCoreNode{..} = tpraosIsCoreNode
 
@@ -255,13 +251,13 @@ data TPraosUnusableKey = TPraosUnusableKey {
     }
   deriving (Show)
 
-checkKesPeriod :: SL.KESPeriod -> HotKey c -> Either TPraosUnusableKey ()
-checkKesPeriod wallclockPeriod hk
-    | let curKeyPeriod = HotKey.toPeriod hk
+checkKesPeriod :: SL.KESPeriod -> HotKey.KESInfo -> Either TPraosUnusableKey ()
+checkKesPeriod wallclockPeriod kesInfo
+    | let curKeyPeriod = HotKey.kesAbsolutePeriod kesInfo
     , curKeyPeriod /= wallclockPeriod
     = Left TPraosUnusableKey {
-          tpraosUnusableKeyStart   = hkStart hk
-        , tpraosUnusableKeyEnd     = hkEnd   hk
+          tpraosUnusableKeyStart   = HotKey.kesStartPeriod kesInfo
+        , tpraosUnusableKeyEnd     = HotKey.kesEndPeriod   kesInfo
         , tpraosUnusableKeyCurrent = curKeyPeriod
         , tpraosUnusableWallClock  = wallclockPeriod
         }
@@ -355,18 +351,6 @@ instance TPraosCrypto c => ChainSelection (TPraos c) where
   -- operational certificate issue number.
   type SelectView (TPraos c) = TPraosChainSelectView c
 
-instance TPraosCrypto c => HasChainIndepState (TPraos c) where
-  type ChainIndepStateConfig (TPraos c) = TPraosParams
-  type ChainIndepState       (TPraos c) = HotKey c
-
-  updateChainIndepState _proxy TPraosParams{..} curSlot hk =
-      -- When the period is outside the range of the key, we can't evolve it
-      -- and get a 'Nothing'. We don't throw an error or exception here, we
-      -- will return/trace this as 'CannotLead'.
-      fromMaybe hk <$> HotKey.evolve curPeriod hk
-    where
-      curPeriod = SL.KESPeriod $ fromIntegral $ unSlotNo curSlot `div` tpraosSlotsPerKESPeriod
-
 -- | Ledger view at a particular slot
 newtype instance Ticked (SL.LedgerView c) = TickedPraosLedgerView {
       -- TODO: Perhaps it would be cleaner to define this as a separate type
@@ -383,13 +367,14 @@ data instance Ticked (TPraosState c) = TickedPraosState {
     }
 
 instance TPraosCrypto c => ConsensusProtocol (TPraos c) where
-  type ChainDepState (TPraos c) = TPraosState c
-  type IsLeader      (TPraos c) = TPraosProof c
-  type CanBeLeader   (TPraos c) = TPraosIsCoreNode c
-  type CannotLead    (TPraos c) = TPraosCannotLead c
-  type LedgerView    (TPraos c) = SL.LedgerView c
-  type ValidationErr (TPraos c) = SL.ChainTransitionError c
-  type ValidateView  (TPraos c) = TPraosValidateView c
+  type ChainDepState  (TPraos c) = TPraosState c
+  type IsLeader       (TPraos c) = TPraosProof c
+  type CanBeLeader    (TPraos c) = TPraosIsCoreNode c
+  type CannotLead     (TPraos c) = TPraosCannotLead c
+  type LedgerView     (TPraos c) = SL.LedgerView c
+  type ValidationErr  (TPraos c) = SL.ChainTransitionError c
+  type ValidateView   (TPraos c) = TPraosValidateView c
+  type ForgeStateInfo (TPraos c) = HotKey.KESInfo
 
   protocolSecurityParam = tpraosSecurityParam . tpraosParams
 

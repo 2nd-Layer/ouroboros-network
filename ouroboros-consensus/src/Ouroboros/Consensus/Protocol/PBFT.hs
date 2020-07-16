@@ -268,9 +268,6 @@ instance PBftCrypto c => ChainSelection (PBft c) where
        score IsEBB    = 1
        score IsNotEBB = 0
 
-instance HasChainIndepState (PBft c)
-  -- Use defaults
-
 -- Ticking has no effect on the PBFtState, but we do need the ticked ledger view
 data instance Ticked (PBftState c) = TickedPBftState {
       tickedPBftLedgerView :: Ticked (LedgerView (PBft c))
@@ -285,11 +282,12 @@ instance PBftCrypto c => ConsensusProtocol (PBft c) where
   --
   --   - Protocol parameters, for the signature window and threshold.
   --   - The delegation map.
-  type LedgerView    (PBft c) = PBftLedgerView c
-  type IsLeader      (PBft c) = PBftIsLeader   c
-  type ChainDepState (PBft c) = PBftState      c
-  type CanBeLeader   (PBft c) = PBftIsLeader   c
-  type CannotLead    (PBft c) = PBftCannotLead c
+  type LedgerView     (PBft c) = PBftLedgerView c
+  type IsLeader       (PBft c) = PBftIsLeader   c
+  type ChainDepState  (PBft c) = PBftState      c
+  type CanBeLeader    (PBft c) = PBftIsLeader   c
+  type CannotLead     (PBft c) = PBftCannotLead c
+  type ForgeStateInfo (PBft c) = ()
 
   protocolSecurityParam = pbftSecurityParam . pbftParams
 

@@ -9,13 +9,12 @@ module Ouroboros.Consensus.Byron.Node (
   , mkByronConfig
   , PBftSignatureThreshold(..)
   , defaultPBftSignatureThreshold
+  , byronBlockForging
     -- * Secrets
-  , PBftLeaderCredentials
+  , PBftLeaderCredentials(..)
   , PBftLeaderCredentialsError
   , mkPBftLeaderCredentials
   , mkPBftIsLeader
-    -- * For testing
-  , plcCoreNodeId
   ) where
 
 import           Control.Monad.Except
@@ -46,6 +45,7 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
+import           Ouroboros.Consensus.Util ((.....:))
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger
@@ -98,6 +98,27 @@ data PBftLeaderCredentialsError =
   deriving (Eq, Show)
 
 {-------------------------------------------------------------------------------
+  BlockForging
+-------------------------------------------------------------------------------}
+
+byronBlockForging
+  :: Monad m
+  => PBftLeaderCredentials
+  -> BlockForging m ByronBlock
+byronBlockForging cred = BlockForging {
+      updateForgeState = \_ -> return ()
+    , canBeLeader      = mkPBftIsLeader cred
+    , forgeBlock       = return .....: forgeByronBlock
+    }
+
+mkPBftIsLeader :: PBftLeaderCredentials -> PBftIsLeader PBftByronCrypto
+mkPBftIsLeader (PBftLeaderCredentials sk cert nid) = PBftIsLeader {
+      pbftCoreNodeId = nid
+    , pbftSignKey    = SignKeyByronDSIGN sk
+    , pbftDlgCert    = cert
+    }
+
+{-------------------------------------------------------------------------------
   ProtocolInfo
 -------------------------------------------------------------------------------}
 
@@ -121,15 +142,12 @@ protocolInfoByron :: forall m. Monad m
 protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            topLevelConfigProtocol = FullProtocolConfig {
-                protocolConfigConsensus = PBftConfig {
-                    pbftParams = byronPBftParams genesisConfig mSigThresh
-                  }
-              , protocolConfigIndep = ()
+            topLevelConfigProtocol = PBftConfig {
+                pbftParams = byronPBftParams genesisConfig mSigThresh
               }
           , topLevelConfigBlock = FullBlockConfig {
                 blockConfigLedger = genesisConfig
-              , blockConfigBlock  = byronConfig
+              , blockConfigBlock  = mkByronConfig genesisConfig pVer sVer
               , blockConfigCodec  = mkByronCodecConfig genesisConfig
               }
           }
@@ -137,14 +155,9 @@ protocolInfoByron genesisConfig mSigThresh pVer sVer mLeader =
             ledgerState = initByronLedgerState genesisConfig Nothing
           , headerState = genesisHeaderState S.empty
           }
-      , pInfoLeaderCreds = mkCreds <$> mLeader
+      , pInfoBlockForging =
+          return . byronBlockForging <$> mLeader
       }
-  where
-    byronConfig = mkByronConfig genesisConfig pVer sVer
-
-    mkCreds :: PBftLeaderCredentials
-            -> (PBftIsLeader PBftByronCrypto, MaintainForgeState m ByronBlock)
-    mkCreds cred = (mkPBftIsLeader cred, defaultMaintainForgeState)
 
 protocolClientInfoByron :: EpochSlots
                         -> SecurityParam
@@ -163,13 +176,6 @@ byronPBftParams cfg threshold = PBftParams {
     , pbftNumNodes           = genesisNumCoreNodes  cfg
     , pbftSignatureThreshold = unSignatureThreshold
                              $ fromMaybe defaultPBftSignatureThreshold threshold
-    }
-
-mkPBftIsLeader :: PBftLeaderCredentials -> PBftIsLeader PBftByronCrypto
-mkPBftIsLeader (PBftLeaderCredentials sk cert nid) = PBftIsLeader {
-      pbftCoreNodeId = nid
-    , pbftSignKey    = SignKeyByronDSIGN sk
-    , pbftDlgCert    = cert
     }
 
 mkByronConfig :: Genesis.Config

@@ -18,6 +18,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol (
     HardForkChainDepState
   , HardForkIsLeader
   , HardForkCanBeLeader
+  , HardForkForgeStateInfo
   , HardForkValidationErr(..)
     -- * Re-exports to keep 'Protocol.LedgerView' an internal module
   , HardForkLedgerView_(..)
@@ -91,13 +92,14 @@ instance CanHardFork xs => ChainSelection (HardForkProtocol xs) where
 type HardForkChainDepState xs = HardForkState WrapChainDepState xs
 
 instance CanHardFork xs => ConsensusProtocol (HardForkProtocol xs) where
-  type ChainDepState (HardForkProtocol xs) = HardForkChainDepState xs
-  type ValidationErr (HardForkProtocol xs) = HardForkValidationErr xs
-  type LedgerView    (HardForkProtocol xs) = HardForkLedgerView    xs
-  type CanBeLeader   (HardForkProtocol xs) = HardForkCanBeLeader   xs
-  type CannotLead    (HardForkProtocol xs) = HardForkCannotLead    xs
-  type IsLeader      (HardForkProtocol xs) = HardForkIsLeader      xs
-  type ValidateView  (HardForkProtocol xs) = OneEraValidateView    xs
+  type ChainDepState  (HardForkProtocol xs) = HardForkChainDepState  xs
+  type ValidationErr  (HardForkProtocol xs) = HardForkValidationErr  xs
+  type LedgerView     (HardForkProtocol xs) = HardForkLedgerView     xs
+  type CanBeLeader    (HardForkProtocol xs) = HardForkCanBeLeader    xs
+  type CannotLead     (HardForkProtocol xs) = HardForkCannotLead     xs
+  type IsLeader       (HardForkProtocol xs) = HardForkIsLeader       xs
+  type ValidateView   (HardForkProtocol xs) = OneEraValidateView     xs
+  type ForgeStateInfo (HardForkProtocol xs) = HardForkForgeStateInfo xs
 
   -- Operations on the state
 
@@ -220,16 +222,22 @@ type HardForkCannotLead xs = OneEraCannotLead xs
 -- /cannot/ be a leader).
 type HardForkCanBeLeader xs = OptNP 'False WrapCanBeLeader xs
 
+-- | When we can lead in an era, we also have a 'ForgeStateInfo' for that era
+-- (through 'BlockForging'). This means that when the hard fork combinator can
+-- be a leader, it must at least have one 'ForgeStateInfo'. Hence
+-- 'PerEraForgeStateInfo' is defined to be @OptNP False@.
+type HardForkForgeStateInfo xs = PerEraForgeStateInfo xs
+
 check :: forall xs. (CanHardFork xs, HasCallStack)
       => ConsensusConfig (HardForkProtocol xs)
       -> HardForkCanBeLeader xs
-      -> ChainIndepState (HardForkProtocol xs)
+      -> ForgeStateInfo (HardForkProtocol xs)
       -> SlotNo
       -> Ticked (ChainDepState (HardForkProtocol xs))
       -> LeaderCheck (HardForkProtocol xs)
 check HardForkConsensusConfig{..}
       canBeLeader
-      (PerEraChainIndepState chainIndepState)
+      (PerEraForgeStateInfo forgeStateInfo)
       slot
       (TickedHardForkChainDepState chainDepState ei) =
     distrib $
@@ -239,7 +247,7 @@ check HardForkConsensusConfig{..}
       `hap`
         fromOptNP canBeLeader
       `hap`
-        chainIndepState
+        fromOptNP forgeStateInfo
       `hap`
         State.tip chainDepState
   where
@@ -248,23 +256,22 @@ check HardForkConsensusConfig{..}
     checkOne :: SingleEraBlock                 blk
              => WrapPartialConsensusConfig     blk
              -> (Maybe :.: WrapCanBeLeader)    blk
-             -> WrapChainIndepState            blk
+             -> (Maybe :.: WrapForgeStateInfo) blk
              -> (Ticked :.: WrapChainDepState) blk
              -> WrapLeaderCheck                blk
     checkOne cfg'
              (Comp mCanBeLeader)
-             chainIndepState'
+             (Comp mForgeStateInfo)
              (Comp chainDepState') = WrapLeaderCheck $
-        case mCanBeLeader of
-          Nothing ->
-            NotLeader
-          Just canBeLeader' ->
+        case (mCanBeLeader, mForgeStateInfo) of
+          (Just canBeLeader', Just forgeStateInfo') ->
             checkIsLeader
               (completeConsensusConfig' ei cfg')
               (unwrapCanBeLeader canBeLeader')
-              (unwrapChainIndepState chainIndepState')
+              (unwrapForgeStateInfo forgeStateInfo')
               slot
               (unwrapTickedChainDepState chainDepState')
+          _otherwise -> NotLeader
 
     distrib :: NS WrapLeaderCheck xs -> LeaderCheck (HardForkProtocol xs)
     distrib = hcollapse . hzipWith3 inj injections injections

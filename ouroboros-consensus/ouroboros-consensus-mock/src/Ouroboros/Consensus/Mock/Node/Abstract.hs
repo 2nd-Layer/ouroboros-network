@@ -20,6 +20,7 @@ import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -31,6 +32,17 @@ class ( MockProtocolSpecific c ext
       , EncodeDisk (SimpleBlock c ext) (ChainDepState (BlockProtocol (SimpleBlock c ext)))
       , DecodeDisk (SimpleBlock c ext) (ChainDepState (BlockProtocol (SimpleBlock c ext)))
       ) => RunMockBlock c ext where
+
+  -- | Construct the protocol specific part of the block
+  --
+  -- This is used in 'forgeSimple', which takes care of the generic part of
+  -- the mock block.
+  forgeExt :: TopLevelConfig                (SimpleBlock c ext)
+           -> ForgeStateInfo (BlockProtocol (SimpleBlock c ext))
+           -> IsLeader       (BlockProtocol (SimpleBlock c ext))
+           -> SimpleBlock' c ext ()
+           -> SimpleBlock c ext
+
   mockProtocolMagicId
     :: BlockConfig (SimpleBlock c ext)
     -> ProtocolMagicId

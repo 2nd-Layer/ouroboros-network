@@ -43,6 +43,7 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import           Ouroboros.Consensus.Util ((.....:))
 
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node
@@ -53,6 +54,20 @@ import qualified Ouroboros.Consensus.ByronSpec.Ledger.Genesis as Genesis
 
 import           Ouroboros.Consensus.ByronDual.Ledger
 import           Ouroboros.Consensus.ByronDual.Node.Serialisation ()
+
+{-------------------------------------------------------------------------------
+  BlockForging
+-------------------------------------------------------------------------------}
+
+dualByronBlockForging
+  :: Monad m
+  => PBftIsLeader PBftByronCrypto
+  -> BlockForging m DualByronBlock
+dualByronBlockForging canBeLeader = BlockForging {
+      updateForgeState = \_ -> return ()
+    , canBeLeader      = canBeLeader
+    , forgeBlock       = return .....: forgeDualByronBlock
+    }
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
@@ -68,11 +83,8 @@ protocolInfoDualByron :: forall m. Monad m
 protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            topLevelConfigProtocol = FullProtocolConfig {
-                protocolConfigConsensus = PBftConfig {
-                    pbftParams = params
-                  }
-              , protocolConfigIndep  = ()
+            topLevelConfigProtocol = PBftConfig {
+                pbftParams = params
               }
           , topLevelConfigBlock = FullBlockConfig {
                 blockConfigLedger = DualLedgerConfig {
@@ -97,18 +109,13 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params mLeader =
                }
            , headerState = genesisHeaderState S.empty
            }
-      , pInfoLeaderCreds = mkCreds <$> mLeader
+      , pInfoBlockForging =
+           return . dualByronBlockForging . pbftIsLeader <$> mLeader
       }
   where
     initUtxo :: Impl.UTxO
     txIdMap  :: Map Spec.TxId Impl.TxId
     (initUtxo, txIdMap) = Spec.Test.elaborateInitialUTxO byronSpecGenesisInitUtxo
-
-    mkCreds :: CoreNodeId
-            -> (PBftIsLeader PBftByronCrypto
-               , MaintainForgeState m DualByronBlock
-               )
-    mkCreds nid = (pbftIsLeader nid, defaultMaintainForgeState)
 
     -- 'Spec.Test.abEnvToCfg' ignores the UTxO, because the Byron genesis
     -- data doesn't contain a UTxO, but only a 'UTxOConfiguration'.

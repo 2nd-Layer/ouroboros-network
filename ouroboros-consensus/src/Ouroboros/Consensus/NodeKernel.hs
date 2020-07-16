@@ -13,7 +13,6 @@
 module Ouroboros.Consensus.NodeKernel (
     -- * Node kernel
     NodeKernel (..)
-  , BlockProduction (..)
   , MaxTxCapacityOverride (..)
   , MempoolCapacityBytesOverride (..)
   , NodeArgs (..)
@@ -57,7 +56,6 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
-import           Ouroboros.Consensus.Node.BlockProduction
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -123,7 +121,7 @@ data NodeArgs m remotePeer localPeer blk = NodeArgs {
     , chainDB                 :: ChainDB m blk
     , initChainDB             :: TopLevelConfig blk -> InitChainDB m blk -> m ()
     , blockFetchSize          :: Header blk -> SizeInBytes
-    , blockProduction         :: Maybe (BlockProduction m blk)
+    , blockForging            :: Maybe (BlockForging m blk)
     , maxTxCapacityOverride   :: MaxTxCapacityOverride
     , mempoolCapacityOverride :: MempoolCapacityBytesOverride
     , miniProtocolParameters  :: MiniProtocolParameters
@@ -140,15 +138,14 @@ initNodeKernel
     => NodeArgs m remotePeer localPeer blk
     -> m (NodeKernel m remotePeer localPeer blk)
 initNodeKernel args@NodeArgs { registry, cfg, tracers, maxTxCapacityOverride
-                             , blockProduction, chainDB, initChainDB
+                             , blockForging, chainDB, initChainDB
                              , blockFetchConfiguration } = do
 
     initChainDB cfg (InitChainDB.fromFull chainDB)
 
     st <- initInternalState args
 
-    whenJust blockProduction $
-      forkBlockProduction maxTxCapacityOverride st
+    whenJust blockForging $ forkBlockForging maxTxCapacityOverride st
 
     let IS { blockFetchInterface, fetchClientRegistry, varCandidates,
              mempool } = st
@@ -281,15 +278,15 @@ initBlockFetchConsensusInterface cfg chainDB getCandidates blockFetchSize btime 
                            -> Ordering
     compareCandidateChains = compareAnchoredCandidates cfg
 
-forkBlockProduction
+forkBlockForging
     :: forall m remotePeer localPeer blk.
        (IOLike m, RunNode blk)
     => MaxTxCapacityOverride
     -> InternalState m remotePeer localPeer blk
-    -> BlockProduction m blk
+    -> BlockForging m blk
     -> m ()
-forkBlockProduction maxTxCapacityOverride IS{..} blockProduction =
-    void $ onKnownSlotChange registry btime "NodeKernel.blockProduction" $
+forkBlockForging maxTxCapacityOverride IS{..} blockForging =
+    void $ onKnownSlotChange registry btime "NodeKernel.blockForging" $
       withEarlyExit_ . go
   where
     go :: SlotNo -> WithEarlyExit m ()
@@ -358,8 +355,9 @@ forkBlockProduction maxTxCapacityOverride IS{..} blockProduction =
         -- Check if we are the leader
         proof <- do
           mIsLeader <- lift $
-            getLeaderProof blockProduction
-              (forgeStateTracer tracers)
+            getLeaderProof blockForging
+              (forgeStateInfoTracer tracers)
+              (configConsensus cfg)
               currentSlot
               (tickedHeaderStateConsensus $ tickedHeaderState ticked)
           case mIsLeader of
@@ -391,7 +389,8 @@ forkBlockProduction maxTxCapacityOverride IS{..} blockProduction =
 
         -- Actually produce the block
         newBlock <- lift $
-          produceBlock blockProduction
+          Block.forgeBlock blockForging
+            cfg
             bcBlockNo
             currentSlot
             (tickedLedgerState ticked)

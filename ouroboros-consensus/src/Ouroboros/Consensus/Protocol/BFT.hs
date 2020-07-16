@@ -125,17 +125,15 @@ data instance ConsensusConfig (Bft c) = BftConfig {
 instance ChainSelection (Bft c)
   -- Use defaults
 
-instance HasChainIndepState (Bft c)
-  -- Use defaults
-
 instance BftCrypto c => ConsensusProtocol (Bft c) where
-  type ValidationErr (Bft c) = BftValidationErr
-  type ValidateView  (Bft c) = BftValidateView c
-  type LedgerView    (Bft c) = ()
-  type IsLeader      (Bft c) = ()
-  type ChainDepState (Bft c) = ()
-  type CanBeLeader   (Bft c) = CoreNodeId
-  type CannotLead    (Bft c) = Void
+  type ValidationErr  (Bft c) = BftValidationErr
+  type ValidateView   (Bft c) = BftValidateView c
+  type LedgerView     (Bft c) = ()
+  type IsLeader       (Bft c) = ()
+  type ChainDepState  (Bft c) = ()
+  type CanBeLeader    (Bft c) = CoreNodeId
+  type CannotLead     (Bft c) = Void
+  type ForgeStateInfo (Bft c) = ()
 
   protocolSecurityParam = bftSecurityParam . bftParams
 

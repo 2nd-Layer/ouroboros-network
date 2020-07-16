@@ -63,6 +63,7 @@ import           Ouroboros.Consensus.Byron.Ledger (ByronBlock,
                      ByronNodeToNodeVersion (..))
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
+import           Ouroboros.Consensus.Byron.Node
 import           Ouroboros.Consensus.Byron.Protocol
 
 import           Test.ThreadNet.General
@@ -809,15 +810,15 @@ prop_setup_coreNodeId ::
   -> CoreNodeId
   -> Property
 prop_setup_coreNodeId numCoreNodes coreNodeId =
-    case pInfoLeaderCreds protInfo of
-      Just (isLeader, _) ->
-          coreNodeId === pbftCoreNodeId isLeader
+    case pInfoBlockForging protInfo of
+      Just (Identity (BlockForging { canBeLeader })) ->
+          coreNodeId === pbftCoreNodeId canBeLeader
       Nothing ->
           counterexample "mkProtocolRealPBFT did not use protocolInfoByron" $
           property False
   where
     protInfo :: ProtocolInfo Identity ByronBlock
-    protInfo = mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets
+    protInfo = fst $ mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets
 
     params :: PBftParams
     params = realPBftParams dummyK numCoreNodes
@@ -1315,24 +1316,25 @@ genNodeRekeys params nodeJoinPlan nodeTopology numSlots@(NumSlots t)
 -- transaction for its new delegation certificate
 --
 mkRekeyUpd
-  :: Genesis.Config
+  :: Monad m
+  => Genesis.Config
   -> Genesis.GeneratedSecrets
+  -> CoreNodeId
   -> ProtocolInfo m ByronBlock
   -> EpochNo
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
   -> Maybe (TestNodeInitialization m ByronBlock)
-mkRekeyUpd genesisConfig genesisSecrets pInfo eno newSK =
-  case pInfoLeaderCreds pInfo of
-    Nothing              -> Nothing
-    Just (isLeader, mfs) ->
-      let PBftIsLeader{pbftCoreNodeId} = isLeader
-          genSK = genesisSecretFor genesisConfig genesisSecrets pbftCoreNodeId
-          isLeader' = updSignKey genSK bcfg isLeader (coerce eno) newSK
-          pInfo' = pInfo { pInfoLeaderCreds = Just (isLeader', mfs) }
+mkRekeyUpd genesisConfig genesisSecrets cid pInfo eno newSK =
+  case pInfoBlockForging pInfo of
+    Nothing -> Nothing
+    Just _  ->
+      let genSK  = genesisSecretFor genesisConfig genesisSecrets cid
+          creds' = updSignKey genSK bcfg cid (coerce eno) newSK
+          blockForging' = byronBlockForging creds'
+          pInfo' = pInfo { pInfoBlockForging = Just (return blockForging') }
 
-          PBftIsLeader{pbftDlgCert} = isLeader'
       in Just TestNodeInitialization
-        { tniCrucialTxs = [dlgTx pbftDlgCert]
+        { tniCrucialTxs = [dlgTx (plcDlgCert creds')]
         , tniProtocolInfo = pInfo'
         }
   where
@@ -1361,19 +1363,22 @@ genesisSecretFor genesisConfig genesisSecrets cid =
         genesisKeyCoreNodeId genesisConfig
       . Crypto.VerKeyByronDSIGN . Crypto.toVerification
 
--- | Overwrite the 'PBftIsLeader''s operational key and delegation certificate
+-- | Create new 'PBftLeaderCredentials' by generating a new delegation
+-- certificate for the given new operational key.
 --
 updSignKey
   :: Crypto.SignKeyDSIGN Crypto.ByronDSIGN
   -> BlockConfig ByronBlock
-  -> PBftIsLeader PBftByronCrypto
+  -> CoreNodeId
   -> EpochNumber
   -> Crypto.SignKeyDSIGN Crypto.ByronDSIGN
-  -> PBftIsLeader PBftByronCrypto
-updSignKey genSK extCfg isLeader eno newSK = isLeader
-    { pbftDlgCert = newCert
-    , pbftSignKey = newSK
-    }
+  -> PBftLeaderCredentials
+updSignKey genSK extCfg cid eno newSK =
+    PBftLeaderCredentials {
+        plcSignKey    = sk'
+      , plcDlgCert    = newCert
+      , plcCoreNodeId = cid
+      }
   where
     newCert =
         Delegation.signCertificate
@@ -1381,9 +1386,9 @@ updSignKey genSK extCfg isLeader eno newSK = isLeader
             (Crypto.toVerification sk')
             eno
             (Crypto.noPassSafeSigner gsk')
-      where
-        Crypto.SignKeyByronDSIGN gsk' = genSK
-        Crypto.SignKeyByronDSIGN sk'  = newSK
+
+    Crypto.SignKeyByronDSIGN gsk' = genSK
+    Crypto.SignKeyByronDSIGN sk'  = newSK
 
 -- | Map a delegation certificate to a delegation transaction
 --

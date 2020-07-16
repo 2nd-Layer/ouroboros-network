@@ -9,7 +9,6 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
     -- * Block based
     WrapApplyTxErr(..)
   , WrapEnvelopeErr(..)
-  , WrapExtraForgeState(..)
   , WrapGenTxId(..)
   , WrapHeaderHash(..)
   , WrapLedgerConfig(..)
@@ -21,10 +20,9 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
   , WrapCanBeLeader(..)
   , WrapCannotLead(..)
   , WrapChainDepState(..)
-  , WrapChainIndepState(..)
-  , WrapChainIndepStateConfig(..)
   , WrapChainSelConfig(..)
   , WrapConsensusConfig(..)
+  , WrapForgeStateInfo(..)
   , WrapIsLeader(..)
   , WrapLeaderCheck(..)
   , WrapLedgerView(..)
@@ -50,7 +48,6 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util (Trivial (..))
 
 {-------------------------------------------------------------------------------
   Block based
@@ -58,7 +55,6 @@ import           Ouroboros.Consensus.Util (Trivial (..))
 
 newtype WrapApplyTxErr      blk = WrapApplyTxErr      { unwrapApplyTxErr      :: ApplyTxErr               blk }
 newtype WrapEnvelopeErr     blk = WrapEnvelopeErr     { unwrapEnvelopeErr     :: OtherHeaderEnvelopeError blk }
-newtype WrapExtraForgeState blk = WrapExtraForgeState { unwrapExtraForgeState :: ExtraForgeState          blk }
 newtype WrapGenTxId         blk = WrapGenTxId         { unwrapGenTxId         :: GenTxId                  blk }
 newtype WrapHeaderHash      blk = WrapHeaderHash      { unwrapHeaderHash      :: HeaderHash               blk }
 newtype WrapLedgerConfig    blk = WrapLedgerConfig    { unwrapLedgerConfig    :: LedgerConfig             blk }
@@ -71,19 +67,18 @@ newtype WrapFullBlockConfig blk = WrapFullBlockConfig { unwrapFullBlockConfig ::
   Consensus based
 -------------------------------------------------------------------------------}
 
-newtype WrapCanBeLeader           blk = WrapCanBeLeader           { unwrapCanBeLeader           :: CanBeLeader           (BlockProtocol blk) }
-newtype WrapCannotLead            blk = WrapCannotLead            { unwrapCannotLead            :: CannotLead            (BlockProtocol blk) }
-newtype WrapChainDepState         blk = WrapChainDepState         { unwrapChainDepState         :: ChainDepState         (BlockProtocol blk) }
-newtype WrapChainIndepState       blk = WrapChainIndepState       { unwrapChainIndepState       :: ChainIndepState       (BlockProtocol blk) }
-newtype WrapChainIndepStateConfig blk = WrapChainIndepStateConfig { unwrapChainIndepStateConfig :: ChainIndepStateConfig (BlockProtocol blk) }
-newtype WrapChainSelConfig        blk = WrapChainSelConfig        { unwrapChainSelConfig        :: ChainSelConfig        (BlockProtocol blk) }
-newtype WrapConsensusConfig       blk = WrapConsensusConfig       { unwrapConsensusConfig       :: ConsensusConfig       (BlockProtocol blk) }
-newtype WrapIsLeader              blk = WrapIsLeader              { unwrapIsLeader              :: IsLeader              (BlockProtocol blk) }
-newtype WrapLeaderCheck           blk = WrapLeaderCheck           { unwrapLeaderCheck           :: LeaderCheck           (BlockProtocol blk) }
-newtype WrapLedgerView            blk = WrapLedgerView            { unwrapLedgerView            :: LedgerView            (BlockProtocol blk) }
-newtype WrapSelectView            blk = WrapSelectView            { unwrapSelectView            :: SelectView            (BlockProtocol blk) }
-newtype WrapValidateView          blk = WrapValidateView          { unwrapValidateView          :: ValidateView          (BlockProtocol blk) }
-newtype WrapValidationErr         blk = WrapValidationErr         { unwrapValidationErr         :: ValidationErr         (BlockProtocol blk) }
+newtype WrapCanBeLeader     blk = WrapCanBeLeader     { unwrapCanBeLeader     :: CanBeLeader     (BlockProtocol blk) }
+newtype WrapCannotLead      blk = WrapCannotLead      { unwrapCannotLead      :: CannotLead      (BlockProtocol blk) }
+newtype WrapChainDepState   blk = WrapChainDepState   { unwrapChainDepState   :: ChainDepState   (BlockProtocol blk) }
+newtype WrapChainSelConfig  blk = WrapChainSelConfig  { unwrapChainSelConfig  :: ChainSelConfig  (BlockProtocol blk) }
+newtype WrapConsensusConfig blk = WrapConsensusConfig { unwrapConsensusConfig :: ConsensusConfig (BlockProtocol blk) }
+newtype WrapForgeStateInfo  blk = WrapForgeStateInfo  { unwrapForgeStateInfo  :: ForgeStateInfo  (BlockProtocol blk) }
+newtype WrapIsLeader        blk = WrapIsLeader        { unwrapIsLeader        :: IsLeader        (BlockProtocol blk) }
+newtype WrapLeaderCheck     blk = WrapLeaderCheck     { unwrapLeaderCheck     :: LeaderCheck     (BlockProtocol blk) }
+newtype WrapLedgerView      blk = WrapLedgerView      { unwrapLedgerView      :: LedgerView      (BlockProtocol blk) }
+newtype WrapSelectView      blk = WrapSelectView      { unwrapSelectView      :: SelectView      (BlockProtocol blk) }
+newtype WrapValidateView    blk = WrapValidateView    { unwrapValidateView    :: ValidateView    (BlockProtocol blk) }
+newtype WrapValidationErr   blk = WrapValidationErr   { unwrapValidationErr   :: ValidationErr   (BlockProtocol blk) }
 
 {-------------------------------------------------------------------------------
   Versioning
@@ -106,20 +101,16 @@ deriving instance Eq (TipInfo                  blk) => Eq (WrapTipInfo       blk
 deriving instance Ord (GenTxId blk) => Ord (WrapGenTxId blk)
 
 deriving instance Show (ApplyTxErr               blk) => Show (WrapApplyTxErr      blk)
-deriving instance Show (ExtraForgeState          blk) => Show (WrapExtraForgeState blk)
 deriving instance Show (GenTxId                  blk) => Show (WrapGenTxId         blk)
 deriving instance Show (LedgerError              blk) => Show (WrapLedgerErr       blk)
 deriving instance Show (LedgerWarning            blk) => Show (WrapLedgerWarning   blk)
 deriving instance Show (OtherHeaderEnvelopeError blk) => Show (WrapEnvelopeErr     blk)
 deriving instance Show (TipInfo                  blk) => Show (WrapTipInfo         blk)
 
-deriving instance NoUnexpectedThunks (ExtraForgeState          blk) => NoUnexpectedThunks (WrapExtraForgeState blk)
 deriving instance NoUnexpectedThunks (GenTxId                  blk) => NoUnexpectedThunks (WrapGenTxId         blk)
 deriving instance NoUnexpectedThunks (LedgerError              blk) => NoUnexpectedThunks (WrapLedgerErr       blk)
 deriving instance NoUnexpectedThunks (OtherHeaderEnvelopeError blk) => NoUnexpectedThunks (WrapEnvelopeErr     blk)
 deriving instance NoUnexpectedThunks (TipInfo                  blk) => NoUnexpectedThunks (WrapTipInfo         blk)
-
-deriving instance Trivial (ExtraForgeState blk) => Trivial (WrapExtraForgeState blk)
 
 {-------------------------------------------------------------------------------
   .. consensus based
@@ -127,23 +118,21 @@ deriving instance Trivial (ExtraForgeState blk) => Trivial (WrapExtraForgeState 
 
 deriving instance Eq (ChainDepState  (BlockProtocol blk)) => Eq (WrapChainDepState  blk)
 deriving instance Eq (ChainSelConfig (BlockProtocol blk)) => Eq (WrapChainSelConfig blk)
+deriving instance Eq (ForgeStateInfo (BlockProtocol blk)) => Eq (WrapForgeStateInfo blk)
 deriving instance Eq (ValidationErr  (BlockProtocol blk)) => Eq (WrapValidationErr  blk)
 
-deriving instance Show (CannotLead      (BlockProtocol blk)) => Show (WrapCannotLead      blk)
-deriving instance Show (ChainDepState   (BlockProtocol blk)) => Show (WrapChainDepState   blk)
-deriving instance Show (ChainIndepState (BlockProtocol blk)) => Show (WrapChainIndepState blk)
-deriving instance Show (ChainSelConfig  (BlockProtocol blk)) => Show (WrapChainSelConfig  blk)
-deriving instance Show (LedgerView      (BlockProtocol blk)) => Show (WrapLedgerView      blk)
-deriving instance Show (SelectView      (BlockProtocol blk)) => Show (WrapSelectView      blk)
-deriving instance Show (ValidationErr   (BlockProtocol blk)) => Show (WrapValidationErr   blk)
+deriving instance Show (CannotLead     (BlockProtocol blk)) => Show (WrapCannotLead     blk)
+deriving instance Show (ChainDepState  (BlockProtocol blk)) => Show (WrapChainDepState  blk)
+deriving instance Show (ChainSelConfig (BlockProtocol blk)) => Show (WrapChainSelConfig blk)
+deriving instance Show (ForgeStateInfo (BlockProtocol blk)) => Show (WrapForgeStateInfo blk)
+deriving instance Show (LedgerView     (BlockProtocol blk)) => Show (WrapLedgerView     blk)
+deriving instance Show (SelectView     (BlockProtocol blk)) => Show (WrapSelectView     blk)
+deriving instance Show (ValidationErr  (BlockProtocol blk)) => Show (WrapValidationErr  blk)
 
-deriving instance NoUnexpectedThunks (ChainSelConfig        (BlockProtocol blk)) => NoUnexpectedThunks (WrapChainSelConfig        blk)
-deriving instance NoUnexpectedThunks (ChainDepState         (BlockProtocol blk)) => NoUnexpectedThunks (WrapChainDepState         blk)
-deriving instance NoUnexpectedThunks (ChainIndepState       (BlockProtocol blk)) => NoUnexpectedThunks (WrapChainIndepState       blk)
-deriving instance NoUnexpectedThunks (ChainIndepStateConfig (BlockProtocol blk)) => NoUnexpectedThunks (WrapChainIndepStateConfig blk)
-deriving instance NoUnexpectedThunks (ValidationErr         (BlockProtocol blk)) => NoUnexpectedThunks (WrapValidationErr         blk)
-
-deriving instance Trivial (ChainIndepState (BlockProtocol blk)) => Trivial (WrapChainIndepState blk)
+deriving instance NoUnexpectedThunks (ChainSelConfig (BlockProtocol blk)) => NoUnexpectedThunks (WrapChainSelConfig blk)
+deriving instance NoUnexpectedThunks (ChainDepState  (BlockProtocol blk)) => NoUnexpectedThunks (WrapChainDepState  blk)
+deriving instance NoUnexpectedThunks (ForgeStateInfo (BlockProtocol blk)) => NoUnexpectedThunks (WrapForgeStateInfo blk)
+deriving instance NoUnexpectedThunks (ValidationErr  (BlockProtocol blk)) => NoUnexpectedThunks (WrapValidationErr  blk)
 
 {-------------------------------------------------------------------------------
   Versioning

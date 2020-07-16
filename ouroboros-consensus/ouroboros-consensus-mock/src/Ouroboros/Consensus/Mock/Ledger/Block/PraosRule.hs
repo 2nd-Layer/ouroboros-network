@@ -31,7 +31,6 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mock.Ledger.Block
-import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
@@ -86,6 +85,15 @@ instance SimpleCrypto c => MockProtocolSpecific c SimplePraosRuleExt where
 -------------------------------------------------------------------------------}
 
 instance SimpleCrypto c => RunMockBlock c SimplePraosRuleExt where
+  forgeExt cfg () _cid SimpleBlock{..} =
+      SimpleBlock {
+          simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
+        , simpleBody   = simpleBody
+        }
+    where
+      ext = SimplePraosRuleExt $ wlsConfigNodeId (configConsensus cfg)
+      SimpleHeader{..} = simpleHeader
+
   mockProtocolMagicId = const constructMockProtocolMagicId
 
 instance
@@ -109,27 +117,6 @@ instance PraosCrypto PraosCryptoUnused where
   type PraosKES  PraosCryptoUnused = NeverKES
   type PraosVRF  PraosCryptoUnused = NeverVRF
   type PraosHash PraosCryptoUnused = NeverHash
-
-{-------------------------------------------------------------------------------
-  Forging
--------------------------------------------------------------------------------}
-
-forgePraosRuleExt :: SimpleCrypto c
-                  => TopLevelConfig (SimplePraosRuleBlock c')
-                  -> SimpleBlock' c SimplePraosRuleExt ()
-                  -> SimplePraosRuleBlock c
-forgePraosRuleExt cfg SimpleBlock{..} =
-    SimpleBlock {
-        simpleHeader = mkSimpleHeader encode simpleHeaderStd ext
-      , simpleBody   = simpleBody
-      }
-  where
-    ext = SimplePraosRuleExt $ wlsConfigNodeId (configConsensus cfg)
-    SimpleHeader{..} = simpleHeader
-
-instance SimpleCrypto c => CanForge (SimplePraosRuleBlock c) where
-  forgeBlock = forgeSimple $ ForgeExt $ \cfg _update _isLeader ->
-      forgePraosRuleExt cfg
 
 {-------------------------------------------------------------------------------
   Serialisation

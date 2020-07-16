@@ -17,11 +17,11 @@ module Ouroboros.Consensus.Shelley.Node (
   , SL.ShelleyGenesis (..)
   , SL.ShelleyGenesisStaking (..)
   , TPraosLeaderCredentials (..)
+  , shelleyBlockForging
   , tpraosBlockIssuerVKey
   , SL.ProtVer
   , SL.Nonce (..)
   , SL.emptyGenesisStaking
-  , shelleyMaintainForgeState
   , validateGenesis
   ) where
 
@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
@@ -62,6 +63,7 @@ import qualified Shelley.Spec.Ledger.EpochBoundary as SL
 import qualified Shelley.Spec.Ledger.Genesis as SL
 import qualified Shelley.Spec.Ledger.LedgerState as SL
 import qualified Shelley.Spec.Ledger.OCert as SL
+import qualified Shelley.Spec.Ledger.OCert as Absolute (KESPeriod (..))
 import qualified Shelley.Spec.Ledger.PParams as SL
 import qualified Shelley.Spec.Ledger.STS.Chain as SL
 import qualified Shelley.Spec.Ledger.STS.NewEpoch as SL
@@ -75,12 +77,11 @@ import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol
 import           Ouroboros.Consensus.Shelley.Protocol.Crypto
-import           Ouroboros.Consensus.Shelley.Protocol.Crypto.HotKey
-                     (HotKey (..))
+import qualified Ouroboros.Consensus.Shelley.Protocol.HotKey as HotKey
 import qualified Ouroboros.Consensus.Shelley.Protocol.State as State
 
 {-------------------------------------------------------------------------------
-  ProtocolInfo
+  Credentials
 -------------------------------------------------------------------------------}
 
 data TPraosLeaderCredentials c = TPraosLeaderCredentials {
@@ -99,23 +100,34 @@ tpraosBlockIssuerVKey mbCredentials =
       Nothing   -> NotABlockIssuer
       Just vkey -> BlockIssuerVKey vkey
 
-shelleyMaintainForgeState
-  :: forall m c. (IOLike m, TPraosCrypto c)
+{-------------------------------------------------------------------------------
+  BlockForging
+-------------------------------------------------------------------------------}
+
+shelleyBlockForging
+  :: (TPraosCrypto c, IOLike m)
   => TPraosParams
   -> TPraosLeaderCredentials c
-  -> MaintainForgeState m (ShelleyBlock c)
-shelleyMaintainForgeState TPraosParams{..} (TPraosLeaderCredentials signKeyKES icn) =
-    defaultMaintainNoExtraForgeState initHotKey
-  where
-    SL.KESPeriod start = SL.ocertKESPeriod $ tpraosIsCoreNodeOpCert icn
-
-    initHotKey = HotKey {
-        hkStart     = SL.KESPeriod start
-      , hkEnd       = SL.KESPeriod (start + fromIntegral tpraosMaxKESEvo)
-        -- We get an unevolved KES key
-      , hkEvolution = 0
-      , hkKey       = signKeyKES
+  -> m (BlockForging m (ShelleyBlock c))
+shelleyBlockForging TPraosParams {..} (TPraosLeaderCredentials signKeyKES icn) = do
+    hotKey <- HotKey.mkHotKey signKeyKES startPeriod tpraosSlotsPerKESPeriod
+    return BlockForging {
+        updateForgeState = \curSlot ->
+          HotKey.evolve hotKey (slotToPeriod curSlot)
+      , canBeLeader = icn
+      , forgeBlock = forgeShelleyBlock hotKey
       }
+  where
+    startPeriod :: Absolute.KESPeriod
+    startPeriod = SL.ocertKESPeriod $ tpraosIsCoreNodeOpCert icn
+
+    slotToPeriod :: SlotNo -> Absolute.KESPeriod
+    slotToPeriod (SlotNo slot) =
+        SL.KESPeriod $ fromIntegral $ slot `div` tpraosSlotsPerKESPeriod
+
+{-------------------------------------------------------------------------------
+  ProtocolInfo
+-------------------------------------------------------------------------------}
 
 -- | Check the validity of the genesis config. To be used in conjunction with
 -- 'assertWithMsg'.
@@ -140,17 +152,14 @@ protocolInfoShelley
 protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
     assertWithMsg (validateGenesis genesis) $
     ProtocolInfo {
-        pInfoConfig      = topLevelConfig
-      , pInfoInitLedger  = initExtLedgerState
-      , pInfoLeaderCreds = mkLeaderCreds <$> mbCredentials
+        pInfoConfig       = topLevelConfig
+      , pInfoInitLedger   = initExtLedgerState
+      , pInfoBlockForging = shelleyBlockForging tpraosParams <$> mbCredentials
       }
   where
     topLevelConfig :: TopLevelConfig (ShelleyBlock c)
     topLevelConfig = TopLevelConfig {
-        topLevelConfigProtocol = FullProtocolConfig {
-            protocolConfigConsensus = consensusConfig
-          , protocolConfigIndep     = tpraosParams
-          }
+        topLevelConfigProtocol = consensusConfig
       , topLevelConfigBlock = FullBlockConfig {
             blockConfigLedger = ledgerConfig
           , blockConfigBlock  = blockConfig
@@ -172,13 +181,6 @@ protocolInfoShelley genesis initialNonce maxMajorPV protVer mbCredentials =
 
     tpraosParams :: TPraosParams
     tpraosParams = mkTPraosParams maxMajorPV initialNonce genesis
-
-    mkLeaderCreds :: TPraosLeaderCredentials c
-                  -> (TPraosIsCoreNode c, MaintainForgeState m (ShelleyBlock c))
-    mkLeaderCreds creds@(TPraosLeaderCredentials _ isACoreNode) = (
-          isACoreNode
-        , shelleyMaintainForgeState tpraosParams creds
-        )
 
     blockConfig :: BlockConfig (ShelleyBlock c)
     blockConfig =

@@ -1,5 +1,6 @@
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.ThreadNet.Infra.Byron.ProtocolInfo (
   theProposedProtocolVersion,
@@ -24,22 +25,20 @@ import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
 
+import           Ouroboros.Consensus.Byron.Crypto.DSIGN (ByronDSIGN,
+                     SignKeyDSIGN (..))
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import           Ouroboros.Consensus.Byron.Node
 
-mkProtocolRealPBFT :: (Monad m, HasCallStack)
-                   => PBftParams
-                   -> CoreNodeId
-                   -> Genesis.Config
-                   -> Genesis.GeneratedSecrets
-                   -> ProtocolInfo m ByronBlock
+mkProtocolRealPBFT ::
+     forall m. (Monad m, HasCallStack)
+  => PBftParams
+  -> CoreNodeId
+  -> Genesis.Config
+  -> Genesis.GeneratedSecrets
+  -> (ProtocolInfo m ByronBlock, SignKeyDSIGN ByronDSIGN)
 mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets =
-    protocolInfoByron
-      genesisConfig
-      (Just $ PBftSignatureThreshold pbftSignatureThreshold)
-      theProposedProtocolVersion
-      theProposedSoftwareVersion
-      (Just leaderCredentials)
+    (protocolInfo, signingKey)
   where
     leaderCredentials :: PBftLeaderCredentials
     leaderCredentials =
@@ -48,7 +47,19 @@ mkProtocolRealPBFT params coreNodeId genesisConfig genesisSecrets =
           genesisSecrets
           coreNodeId
 
+    signingKey :: SignKeyDSIGN ByronDSIGN
+    signingKey = SignKeyByronDSIGN (plcSignKey leaderCredentials)
+
     PBftParams{pbftSignatureThreshold} = params
+
+    protocolInfo :: ProtocolInfo m ByronBlock
+    protocolInfo =
+        protocolInfoByron
+          genesisConfig
+          (Just $ PBftSignatureThreshold pbftSignatureThreshold)
+          theProposedProtocolVersion
+          theProposedSoftwareVersion
+          (Just leaderCredentials)
 
 mkLeaderCredentials
   :: HasCallStack

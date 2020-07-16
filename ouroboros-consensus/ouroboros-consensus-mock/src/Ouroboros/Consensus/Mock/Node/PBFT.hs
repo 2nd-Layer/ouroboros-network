@@ -10,12 +10,12 @@ import qualified Data.Bimap as Bimap
 
 import           Cardano.Crypto.DSIGN
 
-import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Mock.Ledger
+import           Ouroboros.Consensus.Mock.Node
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -31,11 +31,8 @@ protocolInfoMockPBFT :: Monad m
 protocolInfoMockPBFT params eraParams nid =
     ProtocolInfo {
         pInfoConfig = TopLevelConfig {
-            topLevelConfigProtocol = FullProtocolConfig {
-                protocolConfigConsensus = PBftConfig {
-                    pbftParams = params
-                  }
-              , protocolConfigIndep = ()
+            topLevelConfigProtocol = PBftConfig {
+                pbftParams = params
               }
           , topLevelConfigBlock = FullBlockConfig {
                 blockConfigLedger = SimpleLedgerConfig ledgerView eraParams
@@ -45,10 +42,7 @@ protocolInfoMockPBFT params eraParams nid =
           }
       , pInfoInitLedger = ExtLedgerState (genesisSimpleLedgerState addrDist)
                                          (genesisHeaderState S.empty)
-      , pInfoLeaderCreds = Just (
-            canBeLeader
-          , defaultMaintainForgeState
-          )
+      , pInfoBlockForging = Just (return (simpleBlockForging canBeLeader))
       }
   where
     canBeLeader :: PBftIsLeader PBftMockCrypto

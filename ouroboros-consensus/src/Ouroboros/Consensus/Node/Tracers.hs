@@ -58,11 +58,11 @@ data Tracers' remotePeer localPeer blk f = Tracers
   , forgeTracer                   :: f (TraceForgeEvent blk)
   , blockchainTimeTracer          :: f  TraceBlockchainTimeEvent
 
-    -- | Called on every slot with the possibly updated 'ForgeState'
+    -- | Called on every slot with the possibly updated 'ForgeStateInfo'
     --
     -- It is the responsibility of the tracer to only show (parts of) the
-    -- 'ForgeState' when it is changed (or possibly periodically).
-  , forgeStateTracer              :: f (ForgeState blk)
+    -- 'ForgeStateInfo' when it is changed (or possibly periodically).
+  , forgeStateInfoTracer         :: f (ForgeStateInfo (BlockProtocol blk))
   }
 
 instance (forall a. Semigroup (f a))
@@ -79,8 +79,8 @@ instance (forall a. Semigroup (f a))
       , localTxSubmissionServerTracer = f localTxSubmissionServerTracer
       , mempoolTracer                 = f mempoolTracer
       , forgeTracer                   = f forgeTracer
-      , forgeStateTracer              = f forgeStateTracer
       , blockchainTimeTracer          = f blockchainTimeTracer
+      , forgeStateInfoTracer          = f forgeStateInfoTracer
       }
     where
       f :: forall a. Semigroup a
@@ -105,8 +105,8 @@ nullTracers = Tracers
     , localTxSubmissionServerTracer = nullTracer
     , mempoolTracer                 = nullTracer
     , forgeTracer                   = nullTracer
-    , forgeStateTracer              = nullTracer
     , blockchainTimeTracer          = nullTracer
+    , forgeStateInfoTracer          = nullTracer
     }
 
 showTracers :: ( Show blk
@@ -114,7 +114,6 @@ showTracers :: ( Show blk
                , Show (GenTxId blk)
                , Show (ApplyTxErr blk)
                , Show (Header blk)
-               , Show (ExtraForgeState blk)
                , Show remotePeer
                , LedgerSupportsProtocol blk
                )
@@ -131,8 +130,8 @@ showTracers tr = Tracers
     , localTxSubmissionServerTracer = showTracing tr
     , mempoolTracer                 = showTracing tr
     , forgeTracer                   = showTracing tr
-    , forgeStateTracer              = showTracing tr
     , blockchainTimeTracer          = showTracing tr
+    , forgeStateInfoTracer          = showTracing tr
     }
 
 {-------------------------------------------------------------------------------

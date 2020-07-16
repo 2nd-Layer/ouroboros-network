@@ -22,6 +22,7 @@ module Test.Consensus.HardFork.Combinator.B (
   , BlockB(..)
   , binaryBlockInfoB
   , safeZoneB
+  , blockForgingB
     -- * Type family instances
   , BlockConfig(..)
   , CodecConfig(..)
@@ -54,6 +55,7 @@ import           Ouroboros.Network.Magic
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -72,6 +74,7 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Util ((.....:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -90,17 +93,15 @@ data instance ConsensusConfig ProtocolB = CfgB {
 instance ChainSelection ProtocolB where
   -- Use defaults
 
-instance HasChainIndepState ProtocolB where
-  -- Use defaults
-
 instance ConsensusProtocol ProtocolB where
-  type ChainDepState ProtocolB = ()
-  type LedgerView    ProtocolB = ()
-  type IsLeader      ProtocolB = ()
-  type CanBeLeader   ProtocolB = ()
-  type CannotLead    ProtocolB = Void
-  type ValidateView  ProtocolB = ()
-  type ValidationErr ProtocolB = Void
+  type ChainDepState  ProtocolB = ()
+  type LedgerView     ProtocolB = ()
+  type IsLeader       ProtocolB = ()
+  type CanBeLeader    ProtocolB = ()
+  type CannotLead     ProtocolB = Void
+  type ValidateView   ProtocolB = ()
+  type ValidationErr  ProtocolB = Void
+  type ForgeStateInfo ProtocolB = ()
 
   checkIsLeader CfgB{..} () _ slot _ =
       if slot `Set.member` cfgB_leadInSlots
@@ -208,18 +209,6 @@ instance CommonProtocolParams BlockB where
   maxHeaderSize _ = maxBound
   maxTxSize     _ = maxBound
 
-instance CanForge BlockB where
-  forgeBlock _ _ bno sno (TickedLedgerStateB st) _txs _ = BlkB {
-      blkB_header = HdrB {
-          hdrB_fields = HeaderFields {
-              headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
-            , headerFieldSlot    = sno
-            , headerFieldBlockNo = bno
-            }
-        , hdrB_prev = ledgerTipHash st
-        }
-    }
-
 instance BlockSupportsProtocol BlockB where
   validateView _ _ = ()
 
@@ -230,6 +219,32 @@ instance LedgerSupportsProtocol BlockB where
 instance HasPartialConsensusConfig ProtocolB
 
 instance HasPartialLedgerConfig BlockB
+
+forgeBlockB ::
+     TopLevelConfig BlockB
+  -> BlockNo
+  -> SlotNo
+  -> TickedLedgerState BlockB
+  -> [GenTx BlockB]
+  -> IsLeader (BlockProtocol BlockB)
+  -> BlockB
+forgeBlockB _ bno sno (TickedLedgerStateB st) _txs _ = BlkB {
+      blkB_header = HdrB {
+          hdrB_fields = HeaderFields {
+              headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
+            , headerFieldSlot    = sno
+            , headerFieldBlockNo = bno
+            }
+        , hdrB_prev = ledgerTipHash st
+        }
+    }
+
+blockForgingB :: Monad m => BlockForging m BlockB
+blockForgingB = BlockForging {
+     updateForgeState = \_ -> return ()
+   , canBeLeader      = ()
+   , forgeBlock       = return .....: forgeBlockB
+   }
 
 -- | A basic 'History.SafeZone'
 --

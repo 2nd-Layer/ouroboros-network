@@ -23,6 +23,7 @@ module Test.Consensus.HardFork.Combinator.A (
   , binaryBlockInfoA
   , safeFromTipA
   , stabilityWindowA
+  , blockForgingA
     -- * Additional types
   , PartialLedgerConfigA(..)
   , TxPayloadA(..)
@@ -84,7 +85,7 @@ import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.ChainDB.Serialisation
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Util (repeatedlyM)
+import           Ouroboros.Consensus.Util (repeatedlyM, (.....:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
@@ -103,17 +104,15 @@ data instance ConsensusConfig ProtocolA = CfgA {
 instance ChainSelection ProtocolA where
   -- Use defaults
 
-instance HasChainIndepState ProtocolA where
-  -- Use defaults
-
 instance ConsensusProtocol ProtocolA where
-  type ChainDepState ProtocolA = ()
-  type LedgerView    ProtocolA = ()
-  type IsLeader      ProtocolA = ()
-  type CanBeLeader   ProtocolA = ()
-  type CannotLead    ProtocolA = Void
-  type ValidateView  ProtocolA = ()
-  type ValidationErr ProtocolA = Void
+  type ChainDepState  ProtocolA = ()
+  type LedgerView     ProtocolA = ()
+  type IsLeader       ProtocolA = ()
+  type CanBeLeader    ProtocolA = ()
+  type CannotLead     ProtocolA = Void
+  type ValidateView   ProtocolA = ()
+  type ValidationErr  ProtocolA = Void
+  type ForgeStateInfo ProtocolA = ()
 
   checkIsLeader CfgA{..} () _ slot _ =
       if slot `Set.member` cfgA_leadInSlots
@@ -252,22 +251,6 @@ instance CommonProtocolParams BlockA where
   maxHeaderSize _ = maxBound
   maxTxSize     _ = maxBound
 
-instance CanForge BlockA where
-  forgeBlock tlc _ bno sno (TickedLedgerStateA st) _txs _ = BlkA {
-        blkA_header = HdrA {
-            hdrA_fields = HeaderFields {
-                headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
-              , headerFieldSlot    = sno
-              , headerFieldBlockNo = bno
-              }
-          , hdrA_prev = ledgerTipHash st
-          }
-      , blkA_body = Map.findWithDefault [] sno (lcfgA_forgeTxs ledgerConfig)
-      }
-    where
-      ledgerConfig :: PartialLedgerConfig BlockA
-      ledgerConfig = snd $ configLedger tlc
-
 instance BlockSupportsProtocol BlockA where
   validateView _ _ = ()
 
@@ -284,6 +267,36 @@ instance HasPartialLedgerConfig BlockA where
 
 data TxPayloadA = InitiateAtoB
   deriving (Show, Eq, Generic, NoUnexpectedThunks, Serialise)
+
+forgeBlockA ::
+     TopLevelConfig BlockA
+  -> BlockNo
+  -> SlotNo
+  -> TickedLedgerState BlockA
+  -> [GenTx BlockA]
+  -> IsLeader (BlockProtocol BlockA)
+  -> BlockA
+forgeBlockA tlc bno sno (TickedLedgerStateA st) _txs _ = BlkA {
+      blkA_header = HdrA {
+          hdrA_fields = HeaderFields {
+              headerFieldHash    = Lazy.toStrict . B.encode $ unSlotNo sno
+            , headerFieldSlot    = sno
+            , headerFieldBlockNo = bno
+            }
+        , hdrA_prev = ledgerTipHash st
+        }
+    , blkA_body = Map.findWithDefault [] sno (lcfgA_forgeTxs ledgerConfig)
+    }
+  where
+    ledgerConfig :: PartialLedgerConfig BlockA
+    ledgerConfig = snd $ configLedger tlc
+
+blockForgingA :: Monad m => BlockForging m BlockA
+blockForgingA = BlockForging {
+     updateForgeState = \_ -> return ()
+   , canBeLeader      = ()
+   , forgeBlock       = return .....: forgeBlockA
+   }
 
 -- | See 'Ouroboros.Consensus.HardFork.History.EraParams.safeFromTip'
 safeFromTipA :: SecurityParam -> Word64

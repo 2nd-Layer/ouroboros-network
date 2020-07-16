@@ -80,9 +80,6 @@ instance ChainSelection p => ChainSelection (WithLeaderSchedule p) where
   preferCandidate   _ = preferCandidate   (Proxy @p)
   compareCandidates _ = compareCandidates (Proxy @p)
 
-instance HasChainIndepState p => HasChainIndepState (WithLeaderSchedule p) where
-  -- Don't forward to @p@, but use the defaults
-
 data instance ConsensusConfig (WithLeaderSchedule p) = WLSConfig
   { wlsConfigSchedule :: !LeaderSchedule
   , wlsConfigP        :: !(ConsensusConfig p)
@@ -91,13 +88,14 @@ data instance ConsensusConfig (WithLeaderSchedule p) = WLSConfig
   deriving (Generic)
 
 instance ConsensusProtocol p => ConsensusProtocol (WithLeaderSchedule p) where
-  type ChainDepState (WithLeaderSchedule p) = ()
-  type LedgerView    (WithLeaderSchedule p) = ()
-  type ValidationErr (WithLeaderSchedule p) = ()
-  type IsLeader      (WithLeaderSchedule p) = ()
-  type ValidateView  (WithLeaderSchedule p) = ()
-  type CanBeLeader   (WithLeaderSchedule p) = ()
-  type CannotLead    (WithLeaderSchedule p) = Void
+  type ChainDepState  (WithLeaderSchedule p) = ()
+  type LedgerView     (WithLeaderSchedule p) = ()
+  type ValidationErr  (WithLeaderSchedule p) = ()
+  type IsLeader       (WithLeaderSchedule p) = ()
+  type ValidateView   (WithLeaderSchedule p) = ()
+  type CanBeLeader    (WithLeaderSchedule p) = ()
+  type ForgeStateInfo (WithLeaderSchedule p) = ()
+  type CannotLead     (WithLeaderSchedule p) = Void
 
   protocolSecurityParam = protocolSecurityParam . wlsConfigP
   chainSelConfig        = chainSelConfig        . wlsConfigP

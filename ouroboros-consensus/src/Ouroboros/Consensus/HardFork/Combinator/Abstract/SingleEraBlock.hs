@@ -47,7 +47,6 @@ class ( LedgerSupportsProtocol blk
       , LedgerSupportsMempool blk
       , HasTxId (GenTx blk)
       , QueryLedger blk
-      , CanForge blk
       , HasPartialConsensusConfig (BlockProtocol blk)
       , HasPartialLedgerConfig blk
       , ConvertRawHash blk
